@@ -22,3 +22,15 @@ export async function setDocumentStatus(projectId: number, docId: number, status
   if (error) throw new Error(error.message);
   revalidatePath(`/admin/projects/${projectId}/documents`);
 }
+
+// Shared by both the Documents tab and the Quotes & Invoices section
+// on Overview, since both display rows from this same documents
+// table. Removes the actual file from storage, not just the record.
+export async function deleteDocument(projectId: number, docId: number, storageKey: string) {
+  const supabase = await createClient();
+  await supabase.storage.from('project-files').remove([storageKey]);
+  const { error } = await supabase.from('documents').delete().eq('id', docId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/admin/projects/${projectId}/documents`);
+  revalidatePath(`/admin/projects/${projectId}`);
+}
