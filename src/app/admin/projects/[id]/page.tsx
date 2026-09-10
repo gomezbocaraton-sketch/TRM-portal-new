@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { updateProjectInfo, updateDocumentDates, uploadEstimateOrContract } from './actions';
+import { updateProjectInfo, updateDocumentDates, uploadEstimateOrContract, uploadQuoteOrInvoice } from './actions';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
 
 export default async function OverviewTab({ params }: { params: Promise<{ id: string }> }) {
@@ -33,6 +33,7 @@ export default async function OverviewTab({ params }: { params: Promise<{ id: st
   const updateDatesWithId = updateDocumentDates.bind(null, projectId);
   const uploadEstimate = uploadEstimateOrContract.bind(null, projectId, 'estimate');
   const uploadContract = uploadEstimateOrContract.bind(null, projectId, 'contract');
+  const uploadQI = uploadQuoteOrInvoice.bind(null, projectId);
 
   const estimateUrl = project.estimate_file_key
     ? (await supabase.storage.from('project-files').createSignedUrl(project.estimate_file_key, 3600)).data?.signedUrl
@@ -40,6 +41,19 @@ export default async function OverviewTab({ params }: { params: Promise<{ id: st
   const contractUrl = project.contract_file_key
     ? (await supabase.storage.from('project-files').createSignedUrl(project.contract_file_key, 3600)).data?.signedUrl
     : null;
+
+  const { data: quotesInvoices } = await supabase
+    .from('documents')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('category', 'quotes_invoices')
+    .order('uploaded_at', { ascending: false });
+  const quotesInvoicesWithUrls = await Promise.all(
+    (quotesInvoices ?? []).map(async (d) => {
+      const { data } = await supabase.storage.from('project-files').createSignedUrl(d.storage_key, 3600);
+      return { ...d, signedUrl: data?.signedUrl ?? null };
+    })
+  );
 
   return (
     <div className="space-y-6">
@@ -92,6 +106,27 @@ export default async function OverviewTab({ params }: { params: Promise<{ id: st
           <FormWithFeedback action={uploadEstimate} submitLabel="Upload" pendingLabel="Uploading…" className="flex flex-wrap items-center gap-2">
             <input type="file" name="file" className="text-xs" />
             {estimateUrl && <a href={estimateUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-accent-deep underline">View file</a>}
+          </FormWithFeedback>
+        </div>
+
+        <div className="mb-4 rounded-lg border border-line p-4">
+          <p className="mb-2 text-sm font-medium text-navy">Quotes &amp; Invoices</p>
+          {quotesInvoicesWithUrls.length > 0 && (
+            <div className="mb-3 space-y-2">
+              {quotesInvoicesWithUrls.map((d) => (
+                <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-paper px-3 py-2">
+                  <div>
+                    <p className="text-xs font-semibold text-navy">{d.notes || d.file_name}</p>
+                    <p className="text-xs text-ink-soft">{d.uploaded_at?.slice(0, 10)}</p>
+                  </div>
+                  {d.signedUrl && <a href={d.signedUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-accent-deep underline">View</a>}
+                </div>
+              ))}
+            </div>
+          )}
+          <FormWithFeedback action={uploadQI} submitLabel="Add" pendingLabel="Uploading…" className="flex flex-wrap items-center gap-2">
+            <input name="label" placeholder="e.g. Quote #2, Invoice — Jan draw" className="rounded-lg border border-line bg-paper px-2 py-1.5 text-xs" />
+            <input type="file" name="file" className="text-xs" />
           </FormWithFeedback>
         </div>
 
