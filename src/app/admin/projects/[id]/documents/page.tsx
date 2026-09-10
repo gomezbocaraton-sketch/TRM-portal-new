@@ -2,8 +2,8 @@ import { createClient } from '@/lib/supabase/server';
 import { uploadDocument, setDocumentStatus } from './actions';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
 
-const CATEGORIES = ['plans', 'permits', 'insurance', 'other'] as const;
-const LABELS: Record<string, string> = { plans: 'Plans', permits: 'Permits', insurance: 'Insurance', other: 'Other' };
+const CATEGORIES = ['plans', 'permits', 'insurance', 'appliances_specs', 'other'] as const;
+const LABELS: Record<string, string> = { plans: 'Plans', permits: 'Permits', insurance: 'Insurance', appliances_specs: 'Appliances & Specs', other: 'Other' };
 
 export default async function DocumentsTab({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
