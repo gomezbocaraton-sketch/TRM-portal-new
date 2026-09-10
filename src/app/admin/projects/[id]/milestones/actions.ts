@@ -8,14 +8,38 @@ export async function updateMilestone(projectId: number, milestoneId: number, fo
   const status = String(formData.get('status'));
   const completion_percent = parseInt(String(formData.get('completionPercent') ?? '0'), 10);
   const notes = String(formData.get('notes') ?? '');
-  const planned_start_date = formData.get('plannedStartDate') || null;
-  const planned_end_date = formData.get('plannedEndDate') || null;
-  const { error } = await supabase.from('project_milestones').update({ status, completion_percent, notes, planned_start_date, planned_end_date, updated_at: new Date().toISOString() }).eq('id', milestoneId);
+  const { error } = await supabase.from('project_milestones').update({ status, completion_percent, notes, updated_at: new Date().toISOString() }).eq('id', milestoneId);
   if (error) throw new Error(error.message);
   revalidatePath(`/admin/projects/${projectId}/milestones/${milestoneId}`);
   revalidatePath(`/admin/projects/${projectId}/milestones`);
-  revalidatePath(`/admin/projects/${projectId}/schedule`);
   revalidatePath(`/admin`);
+}
+
+// Kept separate from the main milestone form so dates can be saved
+// or cleared on their own, without touching status/completion/notes.
+export async function saveSchedule(projectId: number, milestoneId: number, formData: FormData) {
+  const supabase = await createClient();
+  const planned_start_date = formData.get('plannedStartDate') || null;
+  const planned_end_date = formData.get('plannedEndDate') || null;
+  if (!planned_start_date || !planned_end_date) throw new Error('Both a start and end date are required.');
+  const { error } = await supabase
+    .from('project_milestones')
+    .update({ planned_start_date, planned_end_date, schedule_updated_at: new Date().toISOString() })
+    .eq('id', milestoneId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/admin/projects/${projectId}/milestones/${milestoneId}`);
+  revalidatePath(`/admin/projects/${projectId}/schedule`);
+}
+
+export async function deleteSchedule(projectId: number, milestoneId: number) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('project_milestones')
+    .update({ planned_start_date: null, planned_end_date: null, schedule_updated_at: null })
+    .eq('id', milestoneId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/admin/projects/${projectId}/milestones/${milestoneId}`);
+  revalidatePath(`/admin/projects/${projectId}/schedule`);
 }
 
 export async function addTodo(projectId: number, milestoneId: number, formData: FormData) {
