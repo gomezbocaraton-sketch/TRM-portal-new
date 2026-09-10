@@ -1,10 +1,15 @@
 import { createClient } from '@/lib/supabase/server';
-import { uploadDocument, setDocumentStatus } from './actions';
+import { uploadDocument, setDocumentStatus, deleteDocument } from './actions';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
 import { DropFileInput } from '@/components/DropFileInput';
 
 const CATEGORIES = ['plans', 'permits', 'insurance', 'appliances_specs', 'other'] as const;
 const LABELS: Record<string, string> = { plans: 'Plans', permits: 'Permits', insurance: 'Insurance', appliances_specs: 'Appliances & Specs', other: 'Other' };
+
+function formatTimestamp(iso: string | null): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
 
 export default async function DocumentsTab({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -39,6 +44,7 @@ export default async function DocumentsTab({ params }: { params: Promise<{ id: s
                 {inCategory.map((d) => {
                   const isSuperseded = d.version_status === 'superseded';
                   const toggleAction = setDocumentStatus.bind(null, projectId, d.id, isSuperseded ? 'current' : 'superseded');
+                  const deleteAction = deleteDocument.bind(null, projectId, d.id, d.storage_key);
                   return (
                     <div key={d.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3 ${isSuperseded ? 'border-line bg-paper opacity-70' : 'border-line bg-white'}`}>
                       <div>
@@ -46,11 +52,12 @@ export default async function DocumentsTab({ params }: { params: Promise<{ id: s
                           <p className="text-sm font-semibold text-navy">{d.file_name}</p>
                           <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${isSuperseded ? 'bg-paper text-ink-soft' : 'bg-success-tint text-success'}`}>{isSuperseded ? 'Superseded' : 'Current'}</span>
                         </div>
-                        <p className="text-xs text-ink-soft">{d.notes ? `${d.notes} · ` : ''}{d.uploaded_at?.slice(0, 10)}</p>
+                        <p className="text-xs text-ink-soft">{d.notes ? `${d.notes} · ` : ''}Uploaded {formatTimestamp(d.uploaded_at)}</p>
                       </div>
                       <div className="flex items-center gap-2">
                         {d.signedUrl && <a href={d.signedUrl} target="_blank" rel="noreferrer" className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-navy hover:border-accent">View</a>}
                         <form action={toggleAction}><button className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-navy hover:border-accent">{isSuperseded ? 'Mark as current' : 'Mark as superseded'}</button></form>
+                        <form action={deleteAction}><button className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-red-600 hover:border-red-300">Delete</button></form>
                       </div>
                     </div>
                   );
