@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { uploadDocument, setDocumentStatus } from './actions';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
+import { DropFileInput } from '@/components/DropFileInput';
 
 const CATEGORIES = ['plans', 'permits', 'insurance', 'appliances_specs', 'other'] as const;
 const LABELS: Record<string, string> = { plans: 'Plans', permits: 'Permits', insurance: 'Insurance', appliances_specs: 'Appliances & Specs', other: 'Other' };
@@ -23,7 +24,7 @@ export default async function DocumentsTab({ params }: { params: Promise<{ id: s
         <FormWithFeedback action={uploadWithId} submitLabel="Save document" pendingLabel="Uploading…">
           <div className="mb-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <select name="category" className="rounded-lg border border-line bg-paper px-3 py-2 text-sm">{CATEGORIES.map((c) => <option key={c} value={c}>{LABELS[c]}</option>)}</select>
-            <input type="file" name="file" className="rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+            <DropFileInput name="file" />
           </div>
           <input name="notes" placeholder="Notes (optional)" className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
         </FormWithFeedback>
