@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
-import { updateMilestone, addTodo, toggleTodo, uploadPhoto } from '../actions';
+import { updateMilestone, addTodo, toggleTodo, uploadPhoto, saveSchedule, deleteSchedule } from '../actions';
+import { FormWithFeedback } from '@/components/FormWithFeedback';
 import Link from 'next/link';
 
 export default async function MilestoneDetailPage({ params }: { params: Promise<{ id: string; milestoneId: string }> }) {
@@ -19,6 +20,8 @@ export default async function MilestoneDetailPage({ params }: { params: Promise<
   const updateWithIds = updateMilestone.bind(null, projectId, mId);
   const addTodoWithIds = addTodo.bind(null, projectId, mId);
   const uploadPhotoWithIds = uploadPhoto.bind(null, projectId, mId);
+  const saveScheduleWithIds = saveSchedule.bind(null, projectId, mId);
+  const deleteScheduleWithIds = deleteSchedule.bind(null, projectId, mId);
 
   const photosWithUrls = await Promise.all(
     (photos ?? []).map(async (p) => {
@@ -47,14 +50,6 @@ export default async function MilestoneDetailPage({ params }: { params: Promise<
               <label className="mb-1 block text-xs font-medium text-ink-soft">Completion %</label>
               <input type="number" name="completionPercent" min={0} max={100} defaultValue={milestone.completion_percent} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-ink-soft">Planned start</label>
-              <input type="date" name="plannedStartDate" defaultValue={milestone.planned_start_date ?? ''} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-ink-soft">Planned end</label>
-              <input type="date" name="plannedEndDate" defaultValue={milestone.planned_end_date ?? ''} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
-            </div>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-soft">Notes</label>
@@ -62,6 +57,34 @@ export default async function MilestoneDetailPage({ params }: { params: Promise<
           </div>
           <button className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white">Save</button>
         </form>
+
+        <div className="mb-6 border-t border-line pt-4">
+          <p className="mb-2 text-sm font-semibold text-navy">Schedule</p>
+          <FormWithFeedback action={saveScheduleWithIds} submitLabel="Save dates" className="mb-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-ink-soft">Planned start</label>
+                <input type="date" name="plannedStartDate" defaultValue={milestone.planned_start_date ?? ''} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-ink-soft">Planned end</label>
+                <input type="date" name="plannedEndDate" defaultValue={milestone.planned_end_date ?? ''} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+              </div>
+            </div>
+          </FormWithFeedback>
+          {milestone.planned_start_date && milestone.planned_end_date && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-paper px-3 py-2">
+              <p className="text-xs text-ink-soft">
+                {milestone.schedule_updated_at
+                  ? `Dates set on ${new Date(milestone.schedule_updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                  : 'Dates set'}
+              </p>
+              <form action={deleteScheduleWithIds}>
+                <button className="text-xs font-semibold text-red-600 underline decoration-dotted">Delete dates</button>
+              </form>
+            </div>
+          )}
+        </div>
 
         <div className="mb-6 border-t border-line pt-4">
           <p className="mb-2 text-sm font-semibold text-navy">To-dos</p>
