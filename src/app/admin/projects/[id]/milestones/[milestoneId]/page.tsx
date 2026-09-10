@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { updateMilestone, addTodo, toggleTodo, uploadPhoto, saveSchedule, deleteSchedule } from '../actions';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
+import { DropFileInput } from '@/components/DropFileInput';
 import Link from 'next/link';
 
 export default async function MilestoneDetailPage({ params }: { params: Promise<{ id: string; milestoneId: string }> }) {
@@ -111,7 +112,7 @@ export default async function MilestoneDetailPage({ params }: { params: Promise<
             )}
           </div>
           <form action={uploadPhotoWithIds} className="flex items-center gap-2">
-            <input type="file" name="file" className="text-xs" />
+            <DropFileInput name="file" compact />
             <input name="caption" placeholder="Caption (optional)" className="rounded-lg border border-line bg-paper px-2 py-1.5 text-xs" />
             <button className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-navy">Upload</button>
           </form>
