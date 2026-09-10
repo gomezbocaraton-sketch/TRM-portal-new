@@ -3,46 +3,86 @@
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 
-export async function updateMilestone(projectId: number, milestoneId: number, formData: FormData) {
+export async function updateProjectInfo(projectId: number, formData: FormData) {
   const supabase = await createClient();
-  const status = String(formData.get('status'));
-  const completion_percent = parseInt(String(formData.get('completionPercent') ?? '0'), 10);
-  const notes = String(formData.get('notes') ?? '');
-  const planned_start_date = formData.get('plannedStartDate') || null;
-  const planned_end_date = formData.get('plannedEndDate') || null;
-  const { error } = await supabase.from('project_milestones').update({ status, completion_percent, notes, planned_start_date, planned_end_date, updated_at: new Date().toISOString() }).eq('id', milestoneId);
+
+  const { error } = await supabase
+    .from('projects')
+    .update({
+      client_name: String(formData.get('clientName') ?? '').trim(),
+      client_entity_name: String(formData.get('entityName') ?? '').trim() || null,
+      address: String(formData.get('address') ?? '').trim(),
+      client_phone: String(formData.get('phone') ?? '').trim(),
+      client_email: String(formData.get('email') ?? '').trim(),
+      contract_value: formData.get('contractValue')
+        ? parseFloat(String(formData.get('contractValue')))
+        : null,
+    })
+    .eq('id', projectId);
+
   if (error) throw new Error(error.message);
-  revalidatePath(`/admin/projects/${projectId}/milestones/${milestoneId}`);
-  revalidatePath(`/admin/projects/${projectId}/milestones`);
-  revalidatePath(`/admin/projects/${projectId}/schedule`);
-  revalidatePath(`/admin`);
+  revalidatePath(`/admin/projects/${projectId}`);
 }
 
-export async function addTodo(projectId: number, milestoneId: number, formData: FormData) {
+export async function updateDocumentDates(projectId: number, formData: FormData) {
   const supabase = await createClient();
-  const text = String(formData.get('text') ?? '').trim();
-  if (!text) return;
-  const { error } = await supabase.from('milestone_todos').insert({ milestone_id: milestoneId, text });
+
+  const { error } = await supabase
+    .from('projects')
+    .update({
+      estimate_sent_date: formData.get('estimateSent') || null,
+      estimate_accepted_date: formData.get('estimateAccepted') || null,
+      contract_sent_date: formData.get('contractSent') || null,
+      contract_signed_date: formData.get('contractSigned') || null,
+    })
+    .eq('id', projectId);
+
   if (error) throw new Error(error.message);
-  revalidatePath(`/admin/projects/${projectId}/milestones/${milestoneId}`);
+  revalidatePath(`/admin/projects/${projectId}`);
 }
 
-export async function toggleTodo(projectId: number, milestoneId: number, todoId: number, done: boolean) {
-  const supabase = await createClient();
-  const { error } = await supabase.from('milestone_todos').update({ done }).eq('id', todoId);
-  if (error) throw new Error(error.message);
-  revalidatePath(`/admin/projects/${projectId}/milestones/${milestoneId}`);
-}
-
-export async function uploadPhoto(projectId: number, milestoneId: number, formData: FormData) {
+export async function uploadEstimateOrContract(
+  projectId: number,
+  kind: 'estimate' | 'contract',
+  formData: FormData
+) {
   const supabase = await createClient();
   const file = formData.get('file') as File;
   if (!file || file.size === 0) throw new Error('No file selected.');
-  const path = `${projectId}/milestones/${milestoneId}/${Date.now()}-${file.name}`;
+
+  const path = `${projectId}/${kind}-${Date.now()}-${file.name}`;
   const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file);
   if (uploadError) throw new Error(uploadError.message);
-  const caption = String(formData.get('caption') ?? '');
-  const { error: insertError } = await supabase.from('photos').insert({ milestone_id: milestoneId, storage_key: path, caption });
-  if (insertError) throw new Error(insertError.message);
-  revalidatePath(`/admin/projects/${projectId}/milestones/${milestoneId}`);
+
+  const column = kind === 'estimate' ? 'estimate_file_key' : 'contract_file_key';
+  const { error: updateError } = await supabase.from('projects').update({ [column]: path }).eq('id', projectId);
+  if (updateError) throw new Error(updateError.message);
+
+  revalidatePath(`/admin/projects/${projectId}`);
+}
+
+// Client quotes and invoices reuse the same documents table as the
+// Documents tab, under their own category — but shown here on
+// Overview instead, since that's where you're already looking at
+// the estimate and contract.
+export async function uploadQuoteOrInvoice(projectId: number, formData: FormData) {
+  const supabase = await createClient();
+  const file = formData.get('file') as File;
+  if (!file || file.size === 0) throw new Error('Please choose a file.');
+
+  const label = String(formData.get('label') ?? '').trim() || file.name;
+  const path = `${projectId}/quotes_invoices/${Date.now()}-${file.name}`;
+  const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file);
+  if (uploadError) throw new Error(uploadError.message);
+
+  const { error } = await supabase.from('documents').insert({
+    project_id: projectId,
+    category: 'quotes_invoices',
+    file_name: file.name,
+    storage_key: path,
+    notes: label,
+  });
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/admin/projects/${projectId}`);
 }
