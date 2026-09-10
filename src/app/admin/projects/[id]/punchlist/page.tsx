@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { addPunchItem, toggleItem } from './actions';
+import { DropFileInput } from '@/components/DropFileInput';
 
 export default async function PunchListTab({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,7 +26,7 @@ export default async function PunchListTab({ params }: { params: Promise<{ id: s
         <div className="mb-4 grid grid-cols-3 gap-4">
           <input name="location" placeholder="Location" className="rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
           <input name="trade" placeholder="Trade" className="rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
-          <input type="file" name="photo" className="rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+          <DropFileInput name="photo" />
         </div>
         <button className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white">Add item</button>
       </form>
