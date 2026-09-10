@@ -5,9 +5,11 @@ import { revalidatePath } from 'next/cache';
 
 export async function updateMilestone(projectId: number, milestoneId: number, formData: FormData) {
   const supabase = await createClient();
-  const status = String(formData.get('status'));
-  const completion_percent = parseInt(String(formData.get('completionPercent') ?? '0'), 10);
+  const completion_percent = Math.max(0, Math.min(100, parseInt(String(formData.get('completionPercent') ?? '0'), 10)));
   const notes = String(formData.get('notes') ?? '');
+  // Status is derived from completion %, not set separately — this is
+  // the whole fix: one number to set, not two fields that can disagree.
+  const status = completion_percent === 100 ? 'complete' : completion_percent > 0 ? 'in_progress' : 'not_started';
   const { error } = await supabase.from('project_milestones').update({ status, completion_percent, notes, updated_at: new Date().toISOString() }).eq('id', milestoneId);
   if (error) throw new Error(error.message);
   revalidatePath(`/admin/projects/${projectId}/milestones/${milestoneId}`);
