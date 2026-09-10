@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { updateProjectInfo, updateDocumentDates, uploadEstimateOrContract, uploadQuoteOrInvoice } from './actions';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
+import { DropFileInput } from '@/components/DropFileInput';
 
 export default async function OverviewTab({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -104,7 +105,7 @@ export default async function OverviewTab({ params }: { params: Promise<{ id: st
         <div className="mb-4 rounded-lg border border-line p-4">
           <p className="mb-2 text-sm font-medium text-navy">Estimate file</p>
           <FormWithFeedback action={uploadEstimate} submitLabel="Upload" pendingLabel="Uploading…" className="flex flex-wrap items-center gap-2">
-            <input type="file" name="file" className="text-xs" />
+            <DropFileInput name="file" compact />
             {estimateUrl && <a href={estimateUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-accent-deep underline">View file</a>}
           </FormWithFeedback>
         </div>
@@ -126,14 +127,14 @@ export default async function OverviewTab({ params }: { params: Promise<{ id: st
           )}
           <FormWithFeedback action={uploadQI} submitLabel="Add" pendingLabel="Uploading…" className="flex flex-wrap items-center gap-2">
             <input name="label" placeholder="e.g. Quote #2, Invoice — Jan draw" className="rounded-lg border border-line bg-paper px-2 py-1.5 text-xs" />
-            <input type="file" name="file" className="text-xs" />
+            <DropFileInput name="file" compact />
           </FormWithFeedback>
         </div>
 
         <div className="rounded-lg border border-line p-4">
           <p className="mb-2 text-sm font-medium text-navy">Contract file</p>
           <FormWithFeedback action={uploadContract} submitLabel="Upload" pendingLabel="Uploading…" className="flex flex-wrap items-center gap-2">
-            <input type="file" name="file" className="text-xs" />
+            <DropFileInput name="file" compact />
             {contractUrl && <a href={contractUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-accent-deep underline">View file</a>}
           </FormWithFeedback>
         </div>
