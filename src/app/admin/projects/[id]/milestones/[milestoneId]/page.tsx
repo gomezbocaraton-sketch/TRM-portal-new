@@ -47,6 +47,14 @@ export default async function MilestoneDetailPage({ params }: { params: Promise<
               <label className="mb-1 block text-xs font-medium text-ink-soft">Completion %</label>
               <input type="number" name="completionPercent" min={0} max={100} defaultValue={milestone.completion_percent} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
             </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-soft">Planned start</label>
+              <input type="date" name="plannedStartDate" defaultValue={milestone.planned_start_date ?? ''} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-soft">Planned end</label>
+              <input type="date" name="plannedEndDate" defaultValue={milestone.planned_end_date ?? ''} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+            </div>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-soft">Notes</label>
