@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { recordPayment, addScheduleItem } from './actions';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
+import { DropFileInput } from '@/components/DropFileInput';
 
 export default async function FinancialsTab({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -42,7 +43,7 @@ export default async function FinancialsTab({ params }: { params: Promise<{ id: 
             <input type="date" name="paymentDate" className="rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
             <input name="method" placeholder="Method" className="rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
             <input name="reference" placeholder="Reference" className="rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
-            <input type="file" name="proofFile" className="sm:col-span-2 rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+            <div className="sm:col-span-2"><DropFileInput name="proofFile" /></div>
           </div>
         </FormWithFeedback>
       </div>
