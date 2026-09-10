@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { addSubcontractor, addQuote, decideQuote, uploadInvoice, uploadLienWaiver, recordSubPayment } from './actions';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
+import { DropFileInput } from '@/components/DropFileInput';
 
 async function signedUrl(supabase: Awaited<ReturnType<typeof createClient>>, key: string | null): Promise<string | null> {
   if (!key) return null;
@@ -85,9 +86,9 @@ export default async function SubcontractorsTab({ params }: { params: Promise<{ 
           <div className="mb-1 grid grid-cols-1 gap-4 border-t border-line pt-3 sm:grid-cols-2">
             <input name="licenseNumber" placeholder="License number" className="rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
             <input type="date" name="licenseExpiry" className="rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
-            <input type="file" name="licenseFile" className="rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+            <DropFileInput name="licenseFile" />
             <input type="date" name="insuranceExpiry" className="rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
-            <input type="file" name="insuranceFile" className="sm:col-span-2 rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+            <div className="sm:col-span-2"><DropFileInput name="insuranceFile" /></div>
           </div>
         </FormWithFeedback>
       </div>
@@ -128,9 +129,9 @@ export default async function SubcontractorsTab({ params }: { params: Promise<{ 
                         <div className="mb-2 flex flex-wrap items-center gap-2">
                           {q.quoteUrl && <a href={q.quoteUrl} target="_blank" rel="noreferrer" className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold text-navy">View quote</a>}
                           {q.status === 'pending' && (<><form action={approveWithIds}><button className="rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-white">Approve</button></form><form action={rejectWithIds}><button className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold text-navy">Reject</button></form></>)}
-                          {q.status === 'approved' && !q.invoiceUrl && (<form action={invoiceWithIds} className="flex items-center gap-2"><input type="file" name="invoiceFile" required className="text-xs" /><button className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold text-navy">Upload invoice</button></form>)}
+                          {q.status === 'approved' && !q.invoiceUrl && (<form action={invoiceWithIds} className="flex items-center gap-2"><DropFileInput name="invoiceFile" required compact /><button className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold text-navy">Upload invoice</button></form>)}
                           {q.invoiceUrl && <a href={q.invoiceUrl} target="_blank" rel="noreferrer" className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold text-navy">View invoice</a>}
-                          {q.invoiceUrl && !q.lien_waiver_file_key && (<form action={waiverWithIds} className="flex items-center gap-2"><input type="file" name="waiverFile" required className="text-xs" /><button className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold text-navy">Upload lien waiver</button></form>)}
+                          {q.invoiceUrl && !q.lien_waiver_file_key && (<form action={waiverWithIds} className="flex items-center gap-2"><DropFileInput name="waiverFile" required compact /><button className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold text-navy">Upload lien waiver</button></form>)}
                           {q.lien_waiver_file_key && <span className="rounded-full bg-success-tint px-2.5 py-1 text-xs font-semibold text-success">Lien waiver on file ({q.lien_waiver_received_date})</span>}
                         </div>
                         {q.status === 'approved' && (
@@ -160,7 +161,7 @@ export default async function SubcontractorsTab({ params }: { params: Promise<{ 
                   <input name="description" placeholder="Description" className="rounded-lg border border-line bg-white px-2 py-1.5 text-xs" />
                   <input type="number" name="amount" placeholder="Amount" className="w-24 rounded-lg border border-line bg-white px-2 py-1.5 text-xs" />
                   <input type="date" name="submittedDate" className="rounded-lg border border-line bg-white px-2 py-1.5 text-xs" />
-                  <input type="file" name="quoteFile" className="text-xs" />
+                  <DropFileInput name="quoteFile" compact />
                 </FormWithFeedback>
               </div>
             </div>
