@@ -12,6 +12,8 @@ export async function updateMilestone(projectId: number, milestoneId: number, fo
   if (error) throw new Error(error.message);
   revalidatePath(`/admin/projects/${projectId}/milestones/${milestoneId}`);
   revalidatePath(`/admin/projects/${projectId}/milestones`);
+  revalidatePath(`/admin/projects/${projectId}`);
+  revalidatePath(`/admin/projects/${projectId}/schedule`);
   revalidatePath(`/admin`);
 }
 
