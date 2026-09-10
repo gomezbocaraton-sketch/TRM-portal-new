@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { updateProjectInfo, updateDocumentDates, uploadEstimateOrContract, uploadQuoteOrInvoice } from './actions';
+import { deleteDocument } from './documents/actions';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
 import { DropFileInput } from '@/components/DropFileInput';
 
@@ -114,15 +115,23 @@ export default async function OverviewTab({ params }: { params: Promise<{ id: st
           <p className="mb-2 text-sm font-medium text-navy">Quotes &amp; Invoices</p>
           {quotesInvoicesWithUrls.length > 0 && (
             <div className="mb-3 space-y-2">
-              {quotesInvoicesWithUrls.map((d) => (
-                <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-paper px-3 py-2">
-                  <div>
-                    <p className="text-xs font-semibold text-navy">{d.notes || d.file_name}</p>
-                    <p className="text-xs text-ink-soft">{d.uploaded_at?.slice(0, 10)}</p>
+              {quotesInvoicesWithUrls.map((d) => {
+                const deleteAction = deleteDocument.bind(null, projectId, d.id, d.storage_key);
+                return (
+                  <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-paper px-3 py-2">
+                    <div>
+                      <p className="text-xs font-semibold text-navy">{d.notes || d.file_name}</p>
+                      <p className="text-xs text-ink-soft">
+                        Uploaded {d.uploaded_at ? new Date(d.uploaded_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {d.signedUrl && <a href={d.signedUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-accent-deep underline">View</a>}
+                      <form action={deleteAction}><button className="text-xs font-semibold text-red-600 underline decoration-dotted">Delete</button></form>
+                    </div>
                   </div>
-                  {d.signedUrl && <a href={d.signedUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-accent-deep underline">View</a>}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
           <FormWithFeedback action={uploadQI} submitLabel="Add" pendingLabel="Uploading…" className="flex flex-wrap items-center gap-2">
