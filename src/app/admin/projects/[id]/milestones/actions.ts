@@ -8,10 +8,13 @@ export async function updateMilestone(projectId: number, milestoneId: number, fo
   const status = String(formData.get('status'));
   const completion_percent = parseInt(String(formData.get('completionPercent') ?? '0'), 10);
   const notes = String(formData.get('notes') ?? '');
-  const { error } = await supabase.from('project_milestones').update({ status, completion_percent, notes, updated_at: new Date().toISOString() }).eq('id', milestoneId);
+  const planned_start_date = formData.get('plannedStartDate') || null;
+  const planned_end_date = formData.get('plannedEndDate') || null;
+  const { error } = await supabase.from('project_milestones').update({ status, completion_percent, notes, planned_start_date, planned_end_date, updated_at: new Date().toISOString() }).eq('id', milestoneId);
   if (error) throw new Error(error.message);
   revalidatePath(`/admin/projects/${projectId}/milestones/${milestoneId}`);
   revalidatePath(`/admin/projects/${projectId}/milestones`);
+  revalidatePath(`/admin/projects/${projectId}/schedule`);
   revalidatePath(`/admin`);
 }
 
