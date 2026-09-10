@@ -38,19 +38,17 @@ export default async function MilestoneDetailPage({ params }: { params: Promise<
         <p className="mb-4 text-lg font-medium text-navy">{milestone.name}</p>
 
         <form action={updateWithIds} className="mb-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-ink-soft">Status</label>
-              <select name="status" defaultValue={milestone.status} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm">
-                <option value="not_started">Not started</option>
-                <option value="in_progress">In progress</option>
-                <option value="complete">Complete</option>
-              </select>
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="block text-xs font-medium text-ink-soft">Completion %</label>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                milestone.status === 'complete' ? 'bg-success-tint text-success' : milestone.status === 'in_progress' ? 'bg-accent-tint text-accent-deep' : 'bg-paper text-ink-soft'
+              }`}>
+                {milestone.status === 'complete' ? 'Complete' : milestone.status === 'in_progress' ? 'In progress' : 'Not started'}
+              </span>
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-ink-soft">Completion %</label>
-              <input type="number" name="completionPercent" min={0} max={100} defaultValue={milestone.completion_percent} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
-            </div>
+            <input type="number" name="completionPercent" min={0} max={100} defaultValue={milestone.completion_percent} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+            <p className="mt-1 text-xs text-ink-soft">Status updates automatically: 0% is Not started, 1–99% is In progress, 100% is Complete.</p>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-soft">Notes</label>
