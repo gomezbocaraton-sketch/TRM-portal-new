@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // Drop-in replacement for <input type="file" name="..." />. Works
 // identically from the surrounding form's point of view (still a
@@ -22,21 +22,28 @@ export function DropFileInput({
   compact?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [file, setFileState] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  function setFile(file: File) {
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    if (inputRef.current) inputRef.current.files = dt.files;
-    setFileName(file.name);
-  }
+  // Re-applies the held file to the actual native input on every
+  // render. This defends against React silently recreating the
+  // underlying DOM node (which can happen after a server action's
+  // re-render) — without this, the filename could keep showing
+  // correctly on screen while the real, submittable file was
+  // already gone.
+  useEffect(() => {
+    if (file && inputRef.current) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      inputRef.current.files = dt.files;
+    }
+  });
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) setFile(file);
+    const dropped = e.dataTransfer.files?.[0];
+    if (dropped) setFileState(dropped);
   }
 
   return (
@@ -52,8 +59,8 @@ export function DropFileInput({
         compact ? 'px-3 py-2 text-xs' : 'px-4 py-4 text-sm'
       } ${dragging ? 'border-accent bg-accent-tint' : 'border-line bg-paper hover:border-accent'}`}
     >
-      {fileName ? (
-        <span className="font-medium text-navy">{fileName}</span>
+      {file ? (
+        <span className="font-medium text-navy">{file.name}</span>
       ) : (
         <span className="text-ink-soft">Drag a file here, or click to browse</span>
       )}
@@ -64,8 +71,8 @@ export function DropFileInput({
         required={required}
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) setFileName(file.name);
+          const selected = e.target.files?.[0];
+          if (selected) setFileState(selected);
         }}
       />
     </div>
