@@ -64,11 +64,8 @@ export async function toggleTodo(projectId: number, milestoneId: number, todoId:
 
 export async function uploadPhoto(projectId: number, milestoneId: number, formData: FormData) {
   const supabase = await createClient();
-  const file = formData.get('file') as File;
-  if (!file || file.size === 0) throw new Error('No file selected.');
-  const path = `${projectId}/milestones/${milestoneId}/${Date.now()}-${file.name}`;
-  const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file);
-  if (uploadError) throw new Error(uploadError.message);
+  const path = String(formData.get('file') ?? '').trim();
+  if (!path) throw new Error('No file selected.');
   const caption = String(formData.get('caption') ?? '');
   const { error: insertError } = await supabase.from('photos').insert({ milestone_id: milestoneId, storage_key: path, caption });
   if (insertError) throw new Error(insertError.message);
