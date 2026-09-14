@@ -5,13 +5,11 @@ import { revalidatePath } from 'next/cache';
 
 export async function uploadDocument(projectId: number, formData: FormData) {
   const supabase = await createClient();
-  const file = formData.get('file') as File;
-  if (!file || file.size === 0) throw new Error('Please choose a file.');
+  const path = String(formData.get('file') ?? '').trim();
+  if (!path) throw new Error('Please choose a file.');
+  const fileName = path.split('/').pop() ?? path;
   const category = String(formData.get('category') ?? 'other');
-  const path = `${projectId}/documents/${category}-${Date.now()}-${file.name}`;
-  const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file);
-  if (uploadError) throw new Error(uploadError.message);
-  const { error } = await supabase.from('documents').insert({ project_id: projectId, category, file_name: file.name, storage_key: path, notes: String(formData.get('notes') ?? '') });
+  const { error } = await supabase.from('documents').insert({ project_id: projectId, category, file_name: fileName, storage_key: path, notes: String(formData.get('notes') ?? '') });
   if (error) throw new Error(error.message);
   revalidatePath(`/admin/projects/${projectId}/documents`);
 }
