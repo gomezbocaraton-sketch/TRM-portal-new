@@ -110,7 +110,7 @@ export default async function MilestoneDetailPage({ params }: { params: Promise<
             )}
           </div>
           <form action={uploadPhotoWithIds} className="flex items-center gap-2">
-            <DropFileInput name="file" compact />
+            <DropFileInput name="file" pathPrefix={`${projectId}/milestones/${mId}`} compact />
             <input name="caption" placeholder="Caption (optional)" className="rounded-lg border border-line bg-paper px-2 py-1.5 text-xs" />
             <button className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-navy">Upload</button>
           </form>
