@@ -47,12 +47,8 @@ export async function uploadEstimateOrContract(
   formData: FormData
 ) {
   const supabase = await createClient();
-  const file = formData.get('file') as File;
-  if (!file || file.size === 0) throw new Error('No file selected.');
-
-  const path = `${projectId}/${kind}-${Date.now()}-${file.name}`;
-  const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file);
-  if (uploadError) throw new Error(uploadError.message);
+  const path = String(formData.get('file') ?? '').trim();
+  if (!path) throw new Error('No file selected.');
 
   const column = kind === 'estimate' ? 'estimate_file_key' : 'contract_file_key';
   const { error: updateError } = await supabase.from('projects').update({ [column]: path }).eq('id', projectId);
@@ -67,18 +63,14 @@ export async function uploadEstimateOrContract(
 // the estimate and contract.
 export async function uploadQuoteOrInvoice(projectId: number, formData: FormData) {
   const supabase = await createClient();
-  const file = formData.get('file') as File;
-  if (!file || file.size === 0) throw new Error('Please choose a file.');
+  const path = String(formData.get('file') ?? '').trim();
+  if (!path) throw new Error('Please choose a file.');
 
-  const label = String(formData.get('label') ?? '').trim() || file.name;
-  const path = `${projectId}/quotes_invoices/${Date.now()}-${file.name}`;
-  const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file);
-  if (uploadError) throw new Error(uploadError.message);
-
+  const label = String(formData.get('label') ?? '').trim() || path.split('/').pop() || 'Document';
   const { error } = await supabase.from('documents').insert({
     project_id: projectId,
     category: 'quotes_invoices',
-    file_name: file.name,
+    file_name: path.split('/').pop() ?? path,
     storage_key: path,
     notes: label,
   });
