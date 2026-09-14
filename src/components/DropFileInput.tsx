@@ -1,49 +1,54 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
 
-// Drop-in replacement for <input type="file" name="..." />. Works
-// identically from the surrounding form's point of view (still a
-// real file input with the same name, still reads via
-// formData.get(name)) — this only changes how the file gets
-// selected, adding drag-and-drop on top of the usual click-to-browse.
+// Uploads directly from the browser to Supabase Storage, then exposes
+// the resulting storage path as a hidden text field with this `name`
+// — so from the surrounding form's point of view, formData.get(name)
+// still gives back a simple string, just like before.
 //
-// Dragging works from cloud web pages (OneDrive.com, Gmail, Outlook
-// web), desktop apps like WhatsApp Desktop, and Messages — the
-// browser handles receiving the actual file bytes regardless of
-// where the drag started.
+// Why: routing the actual file bytes through a Vercel Server Action
+// hits a hard, non-configurable 4.5MB platform limit. Uploading
+// straight to Supabase from the browser skips that limit entirely —
+// only the resulting path (a few bytes of text) touches our server.
 export function DropFileInput({
   name,
+  pathPrefix,
   required = false,
   compact = false,
 }: {
   name: string;
+  pathPrefix: string;
   required?: boolean;
   compact?: boolean;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [file, setFileState] = useState<File | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [storagePath, setStoragePath] = useState<string>('');
+  const [status, setStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
   const [dragging, setDragging] = useState(false);
+  const hiddenInputRef = useRef<HTMLInputElement>(null);
+  const pickerRef = useRef<HTMLInputElement>(null);
 
-  // Re-applies the held file to the actual native input on every
-  // render. This defends against React silently recreating the
-  // underlying DOM node (which can happen after a server action's
-  // re-render) — without this, the filename could keep showing
-  // correctly on screen while the real, submittable file was
-  // already gone.
-  useEffect(() => {
-    if (file && inputRef.current) {
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      inputRef.current.files = dt.files;
+  async function uploadFile(file: File) {
+    setFileName(file.name);
+    setStatus('uploading');
+    const supabase = createClient();
+    const path = `${pathPrefix}/${Date.now()}-${file.name}`;
+    const { error } = await supabase.storage.from('project-files').upload(path, file);
+    if (error) {
+      setStatus('error');
+      return;
     }
-  });
+    setStoragePath(path);
+    setStatus('done');
+  }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragging(false);
-    const dropped = e.dataTransfer.files?.[0];
-    if (dropped) setFileState(dropped);
+    const file = e.dataTransfer.files?.[0];
+    if (file) uploadFile(file);
   }
 
   return (
@@ -54,27 +59,28 @@ export function DropFileInput({
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
-      onClick={() => inputRef.current?.click()}
+      onClick={() => pickerRef.current?.click()}
       className={`cursor-pointer rounded-lg border border-dashed text-center transition ${
         compact ? 'px-3 py-2 text-xs' : 'px-4 py-4 text-sm'
       } ${dragging ? 'border-accent bg-accent-tint' : 'border-line bg-paper hover:border-accent'}`}
     >
-      {file ? (
-        <span className="font-medium text-navy">{file.name}</span>
-      ) : (
-        <span className="text-ink-soft">Drag a file here, or click to browse</span>
-      )}
+      {status === 'uploading' && <span className="text-ink-soft">Uploading {fileName}…</span>}
+      {status === 'done' && <span className="font-medium text-success">{fileName} ✓</span>}
+      {status === 'error' && <span className="font-medium text-red-600">Upload failed — click to try again</span>}
+      {status === 'idle' && <span className="text-ink-soft">Drag a file here, or click to browse</span>}
+
+      {/* Real file picker — invisible, just triggers the OS file dialog */}
       <input
-        ref={inputRef}
+        ref={pickerRef}
         type="file"
-        name={name}
-        required={required}
         className="hidden"
         onChange={(e) => {
-          const selected = e.target.files?.[0];
-          if (selected) setFileState(selected);
+          const file = e.target.files?.[0];
+          if (file) uploadFile(file);
         }}
       />
+      {/* What the form actually submits: the storage path, not the file itself */}
+      <input ref={hiddenInputRef} type="hidden" name={name} value={storagePath} required={required} />
     </div>
   );
 }
