@@ -25,10 +25,10 @@ export default async function AdminDashboard() {
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-medium text-navy sm:text-2xl">Projects</h1>
         <div className="flex flex-wrap items-center gap-3">
-          <Link href="/admin/bids" className="text-sm font-semibold text-navy hover:text-accent">
+          <Link href="/admin/bids" className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white">
             Bids
           </Link>
-          <Link href="/admin/archived" className="text-sm font-semibold text-navy hover:text-accent">
+          <Link href="/admin/archived" className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white">
             Archived
           </Link>
           <Link
