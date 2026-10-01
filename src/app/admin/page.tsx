@@ -35,7 +35,7 @@ export default async function AdminDashboard() {
             href="/admin/projects/new"
             className="inline-block w-fit rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white"
           >
-            + Add project
+            Add project
           </Link>
         </div>
       </div>
@@ -61,7 +61,7 @@ export default async function AdminDashboard() {
                 </div>
               </Link>
               <form action={archiveWithId}>
-                <button className="rounded-lg border border-line px-3 py-2 text-xs font-semibold text-navy hover:border-accent sm:ml-4">
+                <button className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white sm:ml-4">
                   Archive
                 </button>
               </form>
