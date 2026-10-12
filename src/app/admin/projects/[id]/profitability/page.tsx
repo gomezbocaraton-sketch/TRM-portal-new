@@ -12,17 +12,18 @@ const CATEGORIES = [
 const DOC_TYPES = ['Invoice', 'Purchase order', 'Receipt', 'Other'];
 
 type Row = Record<string, unknown>;
-const money = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
+const money = (n: number) => '$' + n.toLocaleString();
 
 export default async function ProfitabilityPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const projectId: string | number = /^\d+$/.test(id) ? Number(id) : id;
   const supabase = await createClient();
 
-  const [{ data: adjustedValue }, { data: rawCosts }, { data: milestones }] = await Promise.all([
+  const [{ data: adjustedValue }, { data: rawCosts }, { data: milestones }, { data: payments }] = await Promise.all([
     supabase.rpc('project_adjusted_contract_value', { p_project_id: projectId }),
     supabase.from('project_costs').select('*').eq('project_id', projectId).order('cost_date', { ascending: false }),
     supabase.from('project_milestones').select('*').eq('project_id', projectId).order('id'),
+    supabase.from('payments').select('amount').eq('project_id', projectId),
   ]);
 
   const msName = new Map<string, string>(
@@ -50,10 +51,13 @@ export default async function ProfitabilityPage({ params }: { params: Promise<{ 
     milestone: c.milestone_id != null ? msName.get(String(c.milestone_id)) ?? 'Milestone' : 'General (no milestone)',
   }));
 
-  const revenue = Number(adjustedValue ?? 0);
+  const contractValue = Number(adjustedValue ?? 0);
+  // Same calculation as the Financials tab: sum of recorded payments
+  const received = ((payments ?? []) as Row[]).reduce((sum, p) => sum + Number(p.amount), 0);
   const totalCosts = costs.reduce((s, c) => s + c.amount, 0);
-  const grossProfit = revenue - totalCosts;
-  const marginPct = revenue > 0 ? Math.round((grossProfit / revenue) * 100) : 0;
+  // Profitability is based on money actually received, not money billed
+  const grossProfit = received - totalCosts;
+  const marginPct = received > 0 ? Math.round((grossProfit / received) * 100) : 0;
   const vendors = [...new Set(costs.map((c) => c.vendor))].sort();
   const today = new Date().toISOString().slice(0, 10);
 
@@ -62,23 +66,27 @@ export default async function ProfitabilityPage({ params }: { params: Promise<{ 
 
   return (
     <div>
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-card border border-line bg-white p-5">
-          <p className="text-xs font-medium text-ink-soft">Revenue (contract)</p>
-          <p className="mt-1 text-2xl font-medium text-navy">{money(revenue)}</p>
+          <p className="text-xs font-medium text-ink-soft">Contract value</p>
+          <p className="mt-1 text-2xl font-medium text-navy">{money(contractValue)}</p>
+        </div>
+        <div className="rounded-card border border-line bg-white p-5">
+          <p className="text-xs font-medium text-ink-soft">Total received</p>
+          <p className="mt-1 text-2xl font-medium text-success">{money(received)}</p>
         </div>
         <div className="rounded-card border border-line bg-white p-5">
           <p className="text-xs font-medium text-ink-soft">Costs to date</p>
           <p className="mt-1 text-2xl font-medium text-accent-deep">{money(totalCosts)}</p>
         </div>
         <div className="rounded-card border border-line bg-white p-5">
-          <p className="text-xs font-medium text-ink-soft">Gross profit</p>
+          <p className="text-xs font-medium text-ink-soft">Profit (received − costs)</p>
           <p className={`mt-1 text-2xl font-medium ${grossProfit >= 0 ? 'text-success' : 'text-red-600'}`}>{money(grossProfit)}</p>
         </div>
       </div>
 
       <div className="mb-6 rounded-card border border-line bg-white p-5">
-        <p className="text-xs font-medium text-ink-soft">Gross margin</p>
+        <p className="text-xs font-medium text-ink-soft">Margin on money received</p>
         <p className="mt-1 text-2xl font-medium text-navy">{marginPct}%</p>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-paper">
           <div className="h-full bg-gradient-to-r from-accent to-navy" style={{ width: `${Math.max(0, Math.min(100, marginPct))}%` }} />
