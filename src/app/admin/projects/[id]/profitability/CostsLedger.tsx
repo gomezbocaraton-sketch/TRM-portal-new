@@ -169,7 +169,15 @@ export function CostsLedger({
                 {c.file_name ? (
                   <>
                     {c.doc_type && <span className="rounded-full bg-paper px-2 py-0.5 font-medium text-ink-soft">{c.doc_type}</span>}
-                    {c.signedUrl && <a href={c.signedUrl} target="_blank" rel="noreferrer" className="font-semibold text-accent underline">View file</a>}
+                    <a
+                      href={`/admin/projects/${projectId}/profitability/file/${c.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-accent px-3 py-1 font-semibold text-accent hover:bg-accent hover:text-white"
+                    >
+                      <span aria-hidden>📄</span>
+                      <span className="truncate">Open {c.doc_type ? c.doc_type.toLowerCase() : 'document'}</span>
+                    </a>
                   </>
                 ) : (
                   <>
