@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { attachCostFile, deleteCost } from './cost-actions';
+import { attachCostFile, deleteCost, updateCost } from './cost-actions';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
 import { DropFileInput } from '@/components/DropFileInput';
 
@@ -16,6 +16,7 @@ export type CostRow = {
   file_name: string | null;
   signedUrl: string | null;
   milestone: string;
+  milestoneId: string;
 };
 
 type View = 'category' | 'vendor' | 'milestone';
@@ -23,7 +24,20 @@ const money = (n: number) => '$' + n.toLocaleString('en-US', { minimumFractionDi
 const fmtDate = (d: string | null) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 
-export function CostsLedger({ projectId, costs }: { projectId: string | number; costs: CostRow[] }) {
+export function CostsLedger({
+  projectId,
+  costs,
+  categories,
+  docTypes,
+  milestoneOptions,
+}: {
+  projectId: string | number;
+  costs: CostRow[];
+  categories: string[];
+  docTypes: string[];
+  milestoneOptions: { id: string; name: string }[];
+}) {
+  const [editId, setEditId] = useState<string | number | null>(null);
   const [view, setView] = useState<View>('category');
   const [q, setQ] = useState('');
   const [fCat, setFCat] = useState('');
@@ -163,15 +177,74 @@ export function CostsLedger({ projectId, costs }: { projectId: string | number; 
                     <button type="button" onClick={() => setAttachId(attachId === c.id ? null : c.id)} className="font-semibold text-accent underline">Attach</button>
                   </>
                 )}
+                <button type="button" onClick={() => { setEditId(editId === c.id ? null : c.id); setAttachId(null); }} className="ml-auto font-semibold text-accent underline">
+                  {editId === c.id ? 'Cancel edit' : 'Edit'}
+                </button>
                 <button
                   type="button"
                   onClick={() => (confirmId === c.id ? deleteCost(projectId, c.id) : setConfirmId(c.id))}
                   onBlur={() => setConfirmId(null)}
-                  className={`ml-auto underline ${confirmId === c.id ? 'font-semibold text-red-600' : 'text-ink-soft'}`}
+                  className={`underline ${confirmId === c.id ? 'font-semibold text-red-600' : 'text-ink-soft'}`}
                 >
                   {confirmId === c.id ? 'Click again to delete' : 'Delete'}
                 </button>
               </div>
+              {editId === c.id && (
+                <div className="mt-3 rounded-lg border border-line bg-paper p-4">
+                  <FormWithFeedback
+                    action={async (fd: FormData) => {
+                      await updateCost(projectId, c.id, fd);
+                      setEditId(null);
+                    }}
+                    submitLabel="Save changes"
+                    pendingLabel="Saving…"
+                  >
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-ink-soft">Category *</label>
+                        <select name="category" required defaultValue={c.category} className={`${sel} w-full`}>
+                          {[...new Set([...categories, c.category])].map((x) => <option key={x}>{x}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-ink-soft">Vendor *</label>
+                        <input name="vendor" required defaultValue={c.vendor} className={`${sel} w-full`} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-ink-soft">Milestone *</label>
+                        <select name="milestone" required defaultValue={c.milestoneId} className={`${sel} w-full`}>
+                          {milestoneOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                          <option value="general">General (no milestone)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-ink-soft">Amount *</label>
+                        <input name="amount" type="number" step="0.01" min="0.01" required defaultValue={c.amount} className={`${sel} w-full`} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-ink-soft">Date</label>
+                        <input name="costDate" type="date" defaultValue={c.cost_date ?? ''} className={`${sel} w-full`} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-ink-soft">Description</label>
+                        <input name="description" defaultValue={c.description ?? ''} className={`${sel} w-full`} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-ink-soft">Document type</label>
+                        <select name="docType" defaultValue={c.doc_type ?? 'Invoice'} className={`${sel} w-full`}>
+                          {docTypes.map((x) => <option key={x}>{x}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <label className="mb-1 block text-xs font-medium text-ink-soft">
+                        {c.file_name ? `Replace document (current: ${c.file_name}) — leave empty to keep it` : 'Attach document (optional)'}
+                      </label>
+                      <DropFileInput name="file" pathPrefix={`${projectId}/costs`} />
+                    </div>
+                  </FormWithFeedback>
+                </div>
+              )}
               {attachId === c.id && !c.file_name && (
                 <div className="mt-2 rounded-lg border border-line bg-paper p-3">
                   <FormWithFeedback action={attachCostFile.bind(null, projectId, c.id)} submitLabel="Attach document" pendingLabel="Attaching…">
