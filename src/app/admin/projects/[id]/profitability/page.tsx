@@ -46,6 +46,7 @@ export default async function ProfitabilityPage({ params }: { params: Promise<{ 
     doc_type: (c.doc_type as string | null) ?? null,
     file_name: (c.file_name as string | null) ?? null,
     signedUrl: c.storage_key ? urlByPath.get(String(c.storage_key)) ?? null : null,
+    milestoneId: c.milestone_id != null ? String(c.milestone_id) : 'general',
     milestone: c.milestone_id != null ? msName.get(String(c.milestone_id)) ?? 'Milestone' : 'General (no milestone)',
   }));
 
@@ -142,7 +143,16 @@ export default async function ProfitabilityPage({ params }: { params: Promise<{ 
         </FormWithFeedback>
       </div>
 
-      <CostsLedger projectId={projectId} costs={costs} />
+      <CostsLedger
+        projectId={projectId}
+        costs={costs}
+        categories={CATEGORIES}
+        docTypes={DOC_TYPES}
+        milestoneOptions={((milestones ?? []) as Row[]).map((m) => ({
+          id: String(m.id),
+          name: String(m.name ?? m.title ?? `Milestone ${m.id}`),
+        }))}
+      />
     </div>
   );
 }
