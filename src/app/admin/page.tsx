@@ -28,6 +28,9 @@ export default async function AdminDashboard() {
           <Link href="/admin/bids" className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white">
             Bids
           </Link>
+          <Link href="/admin/timeclock" className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white">
+            Time clock
+          </Link>
           <Link href="/admin/archived" className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white">
             Archived
           </Link>
