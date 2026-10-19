@@ -29,8 +29,10 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isLoginRoute = path.startsWith('/login');
+  // The employee time clock page is public: employees sign in there with their own phone + password
+  const isClockRoute = path === '/clock' || path.startsWith('/clock/');
 
-  if (!user && !isLoginRoute) {
+  if (!user && !isLoginRoute && !isClockRoute) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
   if (user && isLoginRoute) {
