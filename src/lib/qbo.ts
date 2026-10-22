@@ -127,7 +127,7 @@ async function freshAccessToken(conn: QboConnection): Promise<string> {
 export async function qboRequest<T>(
   conn: QboConnection,
   path: string,
-  init?: { method?: 'GET' | 'POST'; body?: unknown }
+  init?: { method?: 'GET' | 'POST'; body?: unknown; contentType?: string }
 ): Promise<T> {
   const token = await freshAccessToken(conn);
   const sep = path.includes('?') ? '&' : '?';
@@ -137,13 +137,25 @@ export async function qboRequest<T>(
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/json',
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(init?.contentType
+        ? { 'Content-Type': init.contentType }
+        : init?.body
+          ? { 'Content-Type': 'application/json' }
+          : {}),
     },
     body: init?.body ? JSON.stringify(init.body) : undefined,
     cache: 'no-store',
   });
   if (!res.ok) {
-    throw new Error(`QuickBooks returned an error (${res.status}).`);
+    let detail = '';
+    try {
+      const body = (await res.json()) as { Fault?: { Error?: { Message?: string; Detail?: string }[] } };
+      const first = body.Fault?.Error?.[0];
+      detail = first ? ` ${first.Message ?? ''} ${first.Detail ?? ''}`.trim() : '';
+    } catch {
+      // no readable error body
+    }
+    throw new Error(`QuickBooks returned an error (${res.status}). ${detail}`.trim());
   }
   return (await res.json()) as T;
 }
