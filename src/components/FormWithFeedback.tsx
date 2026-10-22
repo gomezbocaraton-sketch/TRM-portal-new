@@ -25,7 +25,7 @@ export function FormWithFeedback({
   pendingLabel = 'Saving…',
   className,
 }: {
-  action: (formData: FormData) => Promise<void>;
+  action: (formData: FormData) => Promise<void | { error?: string }>;
   children: React.ReactNode;
   submitLabel?: string;
   pendingLabel?: string;
@@ -33,7 +33,10 @@ export function FormWithFeedback({
 }) {
   async function wrapped(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
     try {
-      await action(formData);
+      const result = await action(formData);
+      if (result && typeof result === 'object' && result.error) {
+        return { success: false, error: result.error };
+      }
       return { success: true, error: null };
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : 'Something went wrong.' };
@@ -46,7 +49,7 @@ export function FormWithFeedback({
   useEffect(() => {
     if (state.success || state.error) {
       setShow(true);
-      const t = setTimeout(() => setShow(false), 3000);
+      const t = setTimeout(() => setShow(false), state.error ? 15000 : 3000);
       return () => clearTimeout(t);
     }
   }, [state]);

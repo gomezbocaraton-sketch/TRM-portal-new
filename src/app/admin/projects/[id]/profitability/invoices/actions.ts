@@ -13,6 +13,19 @@ import {
   latestPaymentDates,
 } from '@/lib/qbo-invoices';
 
+
+type Outcome = { error?: string };
+
+// Next.js hides thrown messages in production, so errors are returned as text instead.
+async function guard(fn: () => Promise<void>): Promise<Outcome> {
+  try {
+    await fn();
+    return {};
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Something went wrong.' };
+  }
+}
+
 function done(projectId: number) {
   revalidatePath(`/admin/projects/${projectId}/profitability/invoices`);
   revalidatePath(`/admin/projects/${projectId}/profitability`);
@@ -25,7 +38,7 @@ async function requireConn() {
   return conn;
 }
 
-export async function linkCustomer(projectId: number, formData: FormData) {
+async function linkCustomerImpl(projectId: number, formData: FormData) {
   const customerId = String(formData.get('customerId') ?? '').trim();
   if (!customerId) throw new Error('Choose a QuickBooks customer.');
   const conn = await requireConn();
@@ -39,7 +52,7 @@ export async function linkCustomer(projectId: number, formData: FormData) {
   done(projectId);
 }
 
-export async function createAndLinkCustomer(projectId: number, _formData: FormData) {
+async function createAndLinkCustomerImpl(projectId: number, _formData: FormData) {
   const conn = await requireConn();
   const supabase = await createClient();
   const { data: project } = await supabase.from('projects').select('client_name, name').eq('id', projectId).single();
@@ -53,7 +66,7 @@ export async function createAndLinkCustomer(projectId: number, _formData: FormDa
   done(projectId);
 }
 
-export async function unlinkCustomer(projectId: number, _formData: FormData) {
+async function unlinkCustomerImpl(projectId: number, _formData: FormData) {
   const supabase = await createClient();
   const { count } = await supabase
     .from('schedule_qbo')
@@ -64,7 +77,7 @@ export async function unlinkCustomer(projectId: number, _formData: FormData) {
   done(projectId);
 }
 
-export async function sendInvoiceFromSchedule(projectId: number, scheduleId: string, formData: FormData) {
+async function sendInvoiceFromScheduleImpl(projectId: number, scheduleId: string, formData: FormData) {
   const conn = await requireConn();
   const supabase = await createClient();
 
@@ -128,7 +141,7 @@ export async function sendInvoiceFromSchedule(projectId: number, scheduleId: str
   done(projectId);
 }
 
-export async function resendInvoice(projectId: number, scheduleId: string, formData: FormData) {
+async function resendInvoiceImpl(projectId: number, scheduleId: string, formData: FormData) {
   const conn = await requireConn();
   const supabase = await createClient();
   const { data: row } = await supabase.from('schedule_qbo').select('*').eq('schedule_id', scheduleId).maybeSingle();
@@ -141,7 +154,7 @@ export async function resendInvoice(projectId: number, scheduleId: string, formD
 }
 
 // Reads every invoice created from this project, and records money received in the portal.
-export async function syncProjectInvoices(projectId: number, _formData: FormData) {
+async function syncProjectInvoicesImpl(projectId: number, _formData: FormData) {
   const conn = await requireConn();
   const supabase = await createClient();
 
@@ -198,4 +211,28 @@ export async function syncProjectInvoices(projectId: number, _formData: FormData
       .eq('schedule_id', String(row.schedule_id));
   }
   done(projectId);
+}
+
+export async function linkCustomer(projectId: number, formData: FormData): Promise<Outcome> {
+  return guard(() => linkCustomerImpl(projectId, formData));
+}
+
+export async function createAndLinkCustomer(projectId: number, _formData: FormData): Promise<Outcome> {
+  return guard(() => createAndLinkCustomerImpl(projectId, _formData));
+}
+
+export async function unlinkCustomer(projectId: number, _formData: FormData): Promise<Outcome> {
+  return guard(() => unlinkCustomerImpl(projectId, _formData));
+}
+
+export async function sendInvoiceFromSchedule(projectId: number, scheduleId: string, formData: FormData): Promise<Outcome> {
+  return guard(() => sendInvoiceFromScheduleImpl(projectId, scheduleId, formData));
+}
+
+export async function resendInvoice(projectId: number, scheduleId: string, formData: FormData): Promise<Outcome> {
+  return guard(() => resendInvoiceImpl(projectId, scheduleId, formData));
+}
+
+export async function syncProjectInvoices(projectId: number, _formData: FormData): Promise<Outcome> {
+  return guard(() => syncProjectInvoicesImpl(projectId, _formData));
 }
