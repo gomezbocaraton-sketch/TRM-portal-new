@@ -31,8 +31,10 @@ export async function middleware(request: NextRequest) {
   const isLoginRoute = path.startsWith('/login');
   // The employee time clock page is public: employees sign in there with their own phone + password
   const isClockRoute = path === '/clock' || path.startsWith('/clock/');
+  // Legal pages must be readable without logging in (Intuit requires public privacy and terms links)
+  const isLegalRoute = path === '/privacy' || path === '/terms';
 
-  if (!user && !isLoginRoute && !isClockRoute) {
+  if (!user && !isLoginRoute && !isClockRoute && !isLegalRoute) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
   if (user && isLoginRoute) {
