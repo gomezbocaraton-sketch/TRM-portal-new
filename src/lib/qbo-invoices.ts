@@ -33,6 +33,14 @@ export async function getCustomer(conn: QboConnection, id: string): Promise<QboC
   return c ? { Id: c.Id, DisplayName: c.DisplayName, Email: c.PrimaryEmailAddr?.Address ?? null } : null;
 }
 
+export async function findCustomerByName(conn: QboConnection, name: string): Promise<QboCustomer | null> {
+  const res = await qboQuery<{
+    QueryResponse?: { Customer?: { Id: string; DisplayName: string; PrimaryEmailAddr?: { Address?: string } }[] };
+  }>(conn, `select Id, DisplayName, PrimaryEmailAddr from Customer where DisplayName = '${q(name)}' maxresults 1`);
+  const c = res.QueryResponse?.Customer?.[0];
+  return c ? { Id: c.Id, DisplayName: c.DisplayName, Email: c.PrimaryEmailAddr?.Address ?? null } : null;
+}
+
 export async function createCustomer(conn: QboConnection, name: string): Promise<QboCustomer> {
   const res = await qboRequest<{ Customer: { Id: string; DisplayName: string } }>(conn, '/customer', {
     method: 'POST',

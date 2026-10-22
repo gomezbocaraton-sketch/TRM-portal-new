@@ -8,6 +8,7 @@ import {
   createInvoice,
   emailInvoice,
   ensureBillingItem,
+  findCustomerByName,
   getCustomer,
   getInvoice,
   latestPaymentDates,
@@ -58,7 +59,16 @@ async function createAndLinkCustomerImpl(projectId: number, _formData: FormData)
   const { data: project } = await supabase.from('projects').select('client_name, name').eq('id', projectId).single();
   const name = String(project?.client_name ?? '').trim();
   if (!name) throw new Error('This project has no client name.');
-  const customer = await createCustomer(conn, name);
+  let customer;
+  try {
+    customer = await createCustomer(conn, name);
+  } catch (e) {
+    // Already in QuickBooks under this name: link to that customer instead of failing.
+    const msg = e instanceof Error ? e.message : '';
+    if (!msg.includes('Duplicate')) throw e;
+    customer = await findCustomerByName(conn, name);
+    if (!customer) throw new Error(`QuickBooks already has "${name}" but it is inactive or could not be found. Reactivate it in QuickBooks, or choose another customer.`);
+  }
   const { error } = await supabase
     .from('project_qbo_link')
     .upsert({ project_id: String(projectId), customer_id: customer.Id, customer_name: customer.DisplayName });
@@ -187,7 +197,7 @@ async function syncProjectInvoicesImpl(projectId: number, _formData: FormData) {
           method: 'QuickBooks',
           reference: inv.DocNumber ?? '',
           notes: 'Synced from QuickBooks invoice',
-          source: 'quickbooks',
+          source: 'manual',
         })
         .select('id')
         .single();
