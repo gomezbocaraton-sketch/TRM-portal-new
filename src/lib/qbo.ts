@@ -24,6 +24,20 @@ type TokenResponse = {
   x_refresh_token_expires_in?: number;
 };
 
+// Errors are written to the Vercel logs (Project, Logs) with Intuit's transaction id so Intuit support can trace them.
+function logQboError(where: string, res: Response, detail: string): void {
+  console.error(
+    JSON.stringify({
+      source: 'quickbooks',
+      where,
+      status: res.status,
+      intuit_tid: res.headers.get('intuit_tid'),
+      detail,
+      at: new Date().toISOString(),
+    })
+  );
+}
+
 export function qboEnvironment(): 'sandbox' | 'production' {
   return process.env.QBO_ENVIRONMENT === 'production' ? 'production' : 'sandbox';
 }
@@ -70,6 +84,14 @@ async function tokenRequest(body: URLSearchParams): Promise<TokenResponse> {
     cache: 'no-store',
   });
   if (!res.ok) {
+    let detail = '';
+    try {
+      const body = (await res.json()) as { error?: string; error_description?: string };
+      detail = `${body.error ?? ''} ${body.error_description ?? ''}`.trim();
+    } catch {
+      // no readable error body
+    }
+    logQboError('token', res, detail);
     throw new Error(`QuickBooks sign-in failed (${res.status}).`);
   }
   return (await res.json()) as TokenResponse;
@@ -155,6 +177,7 @@ export async function qboRequest<T>(
     } catch {
       // no readable error body
     }
+    logQboError(path.split('?')[0], res, detail);
     throw new Error(`QuickBooks returned an error (${res.status}). ${detail}`.trim());
   }
   return (await res.json()) as T;
