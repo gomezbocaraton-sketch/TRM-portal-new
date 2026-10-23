@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 const AUTH_URL = 'https://appcenter.intuit.com/connect/oauth2';
 const TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
@@ -15,6 +16,8 @@ export type QboConnection = {
   refresh_expires_at: string | null;
   connected_at: string;
   updated_at: string;
+  // Set only for the automatic daily sync, which has no signed-in user and talks to the database with the service key.
+  service?: boolean;
 };
 
 type TokenResponse = {
@@ -107,13 +110,30 @@ export async function exchangeCode(code: string): Promise<TokenResponse> {
   );
 }
 
-async function saveTokens(realmId: string, tokens: TokenResponse): Promise<void> {
-  const supabase = await createClient();
+async function saveTokens(realmId: string, tokens: TokenResponse, service = false): Promise<void> {
   const now = Date.now();
   const accessExp = new Date(now + tokens.expires_in * 1000).toISOString();
   const refreshExp = tokens.x_refresh_token_expires_in
     ? new Date(now + tokens.x_refresh_token_expires_in * 1000).toISOString()
     : null;
+
+  if (service) {
+    const admin = createAdminClient();
+    const { error } = await admin
+      .from('qbo_connection')
+      .update({
+        access_token: tokens.access_token,
+        access_expires_at: accessExp,
+        refresh_token: tokens.refresh_token,
+        refresh_expires_at: refreshExp,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', 1);
+    if (error) throw new Error('Could not save the QuickBooks connection.');
+    return;
+  }
+
+  const supabase = await createClient();
   const { error } = await supabase.rpc('qbo_save_connection', {
     p_realm: realmId,
     p_env: qboEnvironment(),
@@ -136,13 +156,21 @@ export async function getConnection(): Promise<QboConnection | null> {
   return data as QboConnection;
 }
 
+// Used by the automatic daily sync (no signed-in user): reads the saved connection with the service key.
+export async function getConnectionAsService(): Promise<QboConnection | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from('qbo_connection').select('*').eq('id', 1).maybeSingle();
+  if (error || !data) return null;
+  return { ...(data as QboConnection), service: true };
+}
+
 async function freshAccessToken(conn: QboConnection): Promise<string> {
   const expiresSoon = new Date(conn.access_expires_at).getTime() - Date.now() < 120_000;
   if (!expiresSoon) return conn.access_token;
   const tokens = await tokenRequest(
     new URLSearchParams({ grant_type: 'refresh_token', refresh_token: conn.refresh_token })
   );
-  await saveTokens(conn.realm_id, tokens);
+  await saveTokens(conn.realm_id, tokens, conn.service === true);
   return tokens.access_token;
 }
 

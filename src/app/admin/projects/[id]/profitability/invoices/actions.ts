@@ -10,9 +10,8 @@ import {
   ensureBillingItem,
   findCustomerByName,
   getCustomer,
-  getInvoice,
-  latestPaymentDates,
 } from '@/lib/qbo-invoices';
+import { syncProject } from '@/lib/qbo-sync';
 
 
 type Outcome = { error?: string };
@@ -167,59 +166,8 @@ async function resendInvoiceImpl(projectId: number, scheduleId: string, formData
 async function syncProjectInvoicesImpl(projectId: number, _formData: FormData) {
   const conn = await requireConn();
   const supabase = await createClient();
-
-  const { data: link } = await supabase.from('project_qbo_link').select('*').eq('project_id', String(projectId)).maybeSingle();
-  if (!link) throw new Error('Link this project to a QuickBooks customer first.');
-  const { data: rows } = await supabase.from('schedule_qbo').select('*').eq('project_id', String(projectId));
-  if (!rows || rows.length === 0) {
-    done(projectId);
-    return;
-  }
-
-  const paidDates = await latestPaymentDates(conn, String(link.customer_id));
-  const today = new Date().toISOString().slice(0, 10);
-
-  for (const row of rows) {
-    const inv = await getInvoice(conn, String(row.qbo_invoice_id));
-    const received = Math.round((Number(inv.TotalAmt) - Number(inv.Balance)) * 100) / 100;
-    let paymentId: string | null = row.payment_id ? String(row.payment_id) : null;
-    const payDate = paidDates.get(String(row.qbo_invoice_id)) ?? today;
-
-    if (paymentId) {
-      await supabase.from('payments').update({ amount: received, payment_date: payDate }).eq('id', paymentId);
-    } else if (received > 0) {
-      const { data: inserted, error } = await supabase
-        .from('payments')
-        .insert({
-          project_id: projectId,
-          amount: received,
-          payment_date: payDate,
-          method: 'QuickBooks',
-          reference: inv.DocNumber ?? '',
-          notes: 'Synced from QuickBooks invoice',
-          source: 'manual',
-        })
-        .select('id')
-        .single();
-      if (error) throw new Error(`Could not record the payment for invoice ${inv.DocNumber ?? inv.Id}: ${error.message}`);
-      paymentId = String(inserted.id);
-    }
-
-    if (Number(inv.Balance) === 0) {
-      await supabase.from('payment_schedule').update({ status: 'paid' }).eq('id', String(row.schedule_id));
-    }
-
-    await supabase
-      .from('schedule_qbo')
-      .update({
-        total: inv.TotalAmt,
-        balance: inv.Balance,
-        doc_number: inv.DocNumber ?? row.doc_number,
-        payment_id: paymentId,
-        last_synced: new Date().toISOString(),
-      })
-      .eq('schedule_id', String(row.schedule_id));
-  }
+  const result = await syncProject(supabase, conn, projectId);
+  if (result === 'no-link') throw new Error('Link this project to a QuickBooks customer first.');
   done(projectId);
 }
 
