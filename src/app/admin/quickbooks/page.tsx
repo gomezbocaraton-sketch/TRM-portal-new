@@ -116,22 +116,6 @@ export default async function QuickBooksPage({
           </div>
         )}
       </div>
-
-      <p className="mt-6 text-sm text-ink-soft">
-        Need help with the QuickBooks connection? Email{' '}
-        <a href="mailto:gomezbocaraton@gmail.com" className="underline">
-          gomezbocaraton@gmail.com
-        </a>
-        . See also the{' '}
-        <a href="/privacy" className="underline">
-          Privacy Policy
-        </a>{' '}
-        and{' '}
-        <a href="/terms" className="underline">
-          Terms of Use
-        </a>
-        .
-      </p>
     </div>
   );
 }
