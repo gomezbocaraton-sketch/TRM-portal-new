@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
@@ -8,6 +8,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Password-reset emails land on the site address; pass them on to the reset page, keeping the one-time key.
+  useEffect(() => {
+    const h = window.location.hash;
+    if (h.includes('type=recovery') || h.includes('error_code=')) {
+      window.location.replace('/auth/reset' + h);
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

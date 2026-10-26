@@ -34,9 +34,11 @@ export async function middleware(request: NextRequest) {
   // Legal pages must be readable without logging in (Intuit requires public privacy and terms links)
   const isLegalRoute = path === '/privacy' || path === '/terms';
   // The daily QuickBooks sync is called by Vercel's scheduler (no login); the route itself checks a secret
+  // The password-reset page must open for someone who is not signed in
+  const isResetRoute = path === '/auth/reset';
   const isCronRoute = path.startsWith('/api/cron/');
 
-  if (!user && !isLoginRoute && !isClockRoute && !isLegalRoute && !isCronRoute) {
+  if (!user && !isLoginRoute && !isClockRoute && !isLegalRoute && !isCronRoute && !isResetRoute) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
   if (user && isLoginRoute) {
