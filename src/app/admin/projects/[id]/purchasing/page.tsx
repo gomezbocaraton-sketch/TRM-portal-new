@@ -13,7 +13,11 @@ import {
   type BuyItem,
   type Urgency,
 } from '@/lib/buyplan';
+import { extractConfigured } from '@/lib/proposal-extract';
 import { addBuyItem } from './actions';
+import { ReadPlansPanel } from './ReadPlansPanel';
+
+export const maxDuration = 60;
 
 type Row = Record<string, unknown>;
 
@@ -32,7 +36,7 @@ export default async function ProjectPurchasingPage({
   const supabase = await createClient();
   const ctx = await getPurchasingContext(supabase);
 
-  const [{ data: itemData }, { data: msData }, { data: poData }] = await Promise.all([
+  const [{ data: itemData }, { data: msData }, { data: poData }, { data: planDocs }] = await Promise.all([
     supabase.from('buy_items').select('*').eq('project_id', projectId).eq('status', 'planned').order('id'),
     supabase
       .from('project_milestones')
@@ -40,7 +44,9 @@ export default async function ProjectPurchasingPage({
       .eq('project_id', projectId)
       .order('sort_order'),
     supabase.from('purchases').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
+    supabase.from('documents').select('storage_key, version_status').eq('project_id', projectId).in('category', ['plans', 'appliances_specs']),
   ]);
+  const planFiles = (planDocs ?? []).filter((d) => d.version_status !== 'superseded' && String(d.storage_key).toLowerCase().endsWith('.pdf')).length;
   const items = (itemData ?? []) as BuyItem[];
   const milestones = (msData ?? []) as Row[];
   const orders = (poData ?? []) as Purchase[];
@@ -78,6 +84,13 @@ export default async function ProjectPurchasingPage({
         Order-by dates come from this project&apos;s schedule: the day each item must be on site, minus its delivery time and a {CUSHION_DAYS}-day cushion.
         Orders over {money(ctx.threshold)} need approval from {approverName}; orders of {money(ctx.threshold)} or less are approved automatically.
       </p>
+
+      <ReadPlansPanel
+        projectId={projectId}
+        steps={milestones.map((m) => ({ id: String(m.id), name: String(m.name), date: m.planned_start_date ? shortDay(String(m.planned_start_date)) : '' }))}
+        planFiles={planFiles}
+        configured={extractConfigured()}
+      />
 
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Link href={filterHref('now')} className={statClass(filter === 'now', 'border-red-300 bg-red-50')}>

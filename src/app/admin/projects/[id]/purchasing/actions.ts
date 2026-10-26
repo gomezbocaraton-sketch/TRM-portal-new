@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createPurchase } from '@/app/admin/purchasing/actions';
 import { searchPrices } from '@/lib/price-search';
 import { extractProposalLines } from '@/lib/proposal-extract';
+import { MAX_PLAN_BYTES, readPlans as readPlansWithAi } from '@/lib/plans-read';
 import { checkAgainstProposal, summarize, type ProposalItem } from '@/lib/proposal';
 import type { BuyItem } from '@/lib/buyplan';
 
@@ -263,4 +264,98 @@ export async function createPoFromItems(formData: FormData): Promise<Outcome> {
   if (result.error) return result;
   refresh();
   redirect(target);
+}
+
+export type DraftItem = {
+  key: number;
+  name: string;
+  quantity: number;
+  unit: string;
+  milestoneId: string;
+  leadDays: number;
+  note: string;
+};
+
+// Reads the project's current plan files and returns a draft list. Nothing is saved until the user adds the items.
+export async function readProjectPlans(projectId: string): Promise<{ error?: string; items?: DraftItem[]; skipped?: string[]; filesRead?: number }> {
+  try {
+    const supabase = await createClient();
+    const { data: project } = await supabase.from('projects').select('name, client_name').eq('id', projectId).maybeSingle();
+    const { data: docs } = await supabase
+      .from('documents')
+      .select('file_name, storage_key, version_status, category')
+      .eq('project_id', projectId)
+      .in('category', ['plans', 'appliances_specs'])
+      .order('uploaded_at', { ascending: false });
+    const candidates = (docs ?? []).filter((d) => d.version_status !== 'superseded' && String(d.storage_key).toLowerCase().endsWith('.pdf'));
+    if (candidates.length === 0) {
+      return { error: 'No plan PDFs found. Upload the plans on the Documents tab (category Plans) as PDF files first.' };
+    }
+
+    const files: { name: string; data: ArrayBuffer }[] = [];
+    const skipped: string[] = [];
+    let total = 0;
+    for (const d of candidates) {
+      const { data: blob } = await supabase.storage.from('project-files').download(String(d.storage_key));
+      if (!blob) {
+        skipped.push(`${d.file_name} (could not open)`);
+        continue;
+      }
+      const buf = await blob.arrayBuffer();
+      if (total + buf.byteLength > MAX_PLAN_BYTES) {
+        skipped.push(`${d.file_name} (too large to include)`);
+        continue;
+      }
+      total += buf.byteLength;
+      files.push({ name: String(d.file_name), data: buf });
+    }
+    if (files.length === 0) return { error: 'The plan files are too large to read. Upload a smaller PDF (under 24 MB, up to 100 pages).' };
+
+    const { data: ms } = await supabase.from('project_milestones').select('id, name').eq('project_id', projectId).order('sort_order');
+    const milestones = (ms ?? []) as { id: string | number; name: string }[];
+    const items = await readPlansWithAi(files, milestones.map((m) => m.name), String(project?.name ?? project?.client_name ?? 'this project'));
+
+    const { data: existing } = await supabase.from('buy_items').select('name').eq('project_id', projectId);
+    const have = new Set((existing ?? []).map((e: { name: string }) => e.name.trim().toLowerCase()));
+    const fresh = items.filter((i) => !have.has(i.name.trim().toLowerCase()));
+
+    return {
+      filesRead: files.length,
+      skipped,
+      items: fresh.map((i, k) => {
+        const hit = milestones.find((m) => i.milestone && m.name.trim().toLowerCase() === i.milestone.trim().toLowerCase());
+        return {
+          key: k,
+          name: i.name,
+          quantity: i.quantity,
+          unit: i.unit ?? '',
+          milestoneId: hit ? String(hit.id) : '',
+          leadDays: i.lead_days,
+          note: i.note ?? '',
+        };
+      }),
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Something went wrong while reading the plans.' };
+  }
+}
+
+export async function addDraftItems(projectId: string, drafts: DraftItem[]): Promise<Outcome> {
+  return guard(async () => {
+    const rows = drafts
+      .filter((d) => d.name.trim() && d.milestoneId && d.quantity > 0)
+      .map((d) => ({
+        project_id: projectId,
+        name: d.name.trim().slice(0, 200),
+        quantity: d.quantity,
+        unit: d.unit.trim() || null,
+        milestone_id: d.milestoneId,
+        lead_days: Math.max(0, Math.round(d.leadDays)),
+      }));
+    if (rows.length === 0) throw new Error('Choose at least one item, and pick the schedule step for each.');
+    const supabase = await createClient();
+    const { error } = await supabase.from('buy_items').insert(rows);
+    if (error) throw new Error(error.message);
+    refresh();
+  });
 }
