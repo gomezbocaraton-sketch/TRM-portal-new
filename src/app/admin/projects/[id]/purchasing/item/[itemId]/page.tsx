@@ -17,14 +17,14 @@ const CATS: Record<string, { label: string; cls: string }> = {
   other: { label: 'Quote', cls: 'text-ink-soft' },
 };
 
-export default async function ItemPricesPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const itemId = Number(id);
+export default async function ItemPricesPage({ params }: { params: Promise<{ id: string; itemId: string }> }) {
+  const { id: projectId, itemId: itemParam } = await params;
+  const itemId = Number(itemParam);
   const supabase = await createClient();
 
   const { data } = await supabase.from('buy_items').select('*').eq('id', itemId).maybeSingle();
   const item = data as BuyItem | null;
-  if (!item) return <p className="text-sm text-ink-soft">Item not found.</p>;
+  if (!item || String(item.project_id) !== projectId) return <p className="text-sm text-ink-soft">Item not found.</p>;
 
   const [{ data: quoteData }, { data: proposalData }, { data: ms }] = await Promise.all([
     supabase.from('price_quotes').select('*').eq('buy_item_id', itemId).order('price'),
@@ -58,8 +58,8 @@ export default async function ItemPricesPage({ params }: { params: Promise<{ id:
 
   return (
     <div>
-      <Link href="/admin/purchasing/plan" className="mb-4 inline-block text-sm text-ink-soft hover:text-navy">
-        &larr; Buy plan
+      <Link href={`/admin/projects/${projectId}/purchasing`} className="mb-4 inline-block text-sm text-ink-soft hover:text-navy">
+        &larr; Purchasing
       </Link>
       <div className="mb-5 rounded-card border border-line bg-white p-4 sm:p-6">
         <p className="text-lg font-medium text-navy">{item.name}</p>

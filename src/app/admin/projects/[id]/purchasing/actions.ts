@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { createPurchase } from '../actions';
+import { createPurchase } from '@/app/admin/purchasing/actions';
 import { searchPrices } from '@/lib/price-search';
 import { extractProposalLines } from '@/lib/proposal-extract';
 import { checkAgainstProposal, summarize, type ProposalItem } from '@/lib/proposal';
@@ -22,8 +22,7 @@ async function guard(fn: () => Promise<void>): Promise<Outcome> {
 }
 
 function refresh() {
-  revalidatePath('/admin/purchasing/plan', 'layout');
-  revalidatePath('/admin/purchasing');
+  revalidatePath('/admin', 'layout');
 }
 
 function num(v: FormDataEntryValue | null, fallback = 0): number {
@@ -61,9 +60,10 @@ export async function addBuyItem(formData: FormData): Promise<Outcome> {
 
 export async function deleteBuyItem(itemId: number): Promise<void> {
   const supabase = await createClient();
+  const { data: it } = await supabase.from('buy_items').select('project_id').eq('id', itemId).maybeSingle();
   await supabase.from('buy_items').delete().eq('id', itemId).eq('status', 'planned');
   refresh();
-  redirect('/admin/purchasing/plan');
+  redirect(it ? `/admin/projects/${it.project_id}/purchasing` : '/admin');
 }
 
 export async function searchWebPrices(itemId: number, formData: FormData): Promise<Outcome> {
@@ -200,7 +200,7 @@ export async function acceptDifference(itemId: number, formData: FormData): Prom
 // Over the approval amount the order waits for Vanessa; at or under it is approved automatically.
 export async function createPoFromItems(formData: FormData): Promise<Outcome> {
   const ids = formData.getAll('ids').map((v) => Number(v)).filter((n) => Number.isFinite(n));
-  let target = '/admin/purchasing';
+  let target = '/admin';
   const result = await guard(async () => {
     if (ids.length === 0) throw new Error('Choose at least one item.');
     const supabase = await createClient();
@@ -258,7 +258,7 @@ export async function createPoFromItems(formData: FormData): Promise<Outcome> {
         await supabase.from('purchase_events').insert({ purchase_id: res.id, event: 'Proposal check', who: 'System', note: summary });
       }
     }
-    target = created.length === 1 ? `/admin/purchasing/${created[0]}` : '/admin/purchasing';
+    target = created.length === 1 ? `/admin/purchasing/${created[0]}` : `/admin/projects/${projectIds[0]}/purchasing`;
   });
   if (result.error) return result;
   refresh();

@@ -18,21 +18,21 @@ const LABEL: Record<CheckKind, { text: string; cls: string; row: string }> = {
   notinproposal: { text: '⚠ Not in the proposal', cls: 'text-red-700', row: 'bg-red-50' },
 };
 
-export default async function ProposalCheckPage({ searchParams }: { searchParams: Promise<{ ids?: string | string[]; project?: string }> }) {
+export default async function ProposalCheckPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ids?: string | string[] }> }) {
+  const { id: projectId } = await params;
   const sp = await searchParams;
   const supabase = await createClient();
 
   const idList = (Array.isArray(sp.ids) ? sp.ids : sp.ids ? [sp.ids] : []).map(Number).filter((n) => Number.isFinite(n));
   let items: BuyItem[] = [];
   if (idList.length > 0) {
-    const { data } = await supabase.from('buy_items').select('*').in('id', idList);
+    const { data } = await supabase.from('buy_items').select('*').in('id', idList).eq('project_id', projectId);
     items = (data ?? []) as BuyItem[];
-  } else if (sp.project) {
-    const { data } = await supabase.from('buy_items').select('*').eq('project_id', sp.project).eq('status', 'planned');
+  } else {
+    const { data } = await supabase.from('buy_items').select('*').eq('project_id', projectId).eq('status', 'planned');
     items = (data ?? []) as BuyItem[];
   }
-  const projectIds = Array.from(new Set(items.map((i) => i.project_id)));
-  if (sp.project && !projectIds.includes(sp.project)) projectIds.push(sp.project);
+  const projectIds = [projectId];
 
   const [{ data: projectData }, { data: proposalData }, { data: allData }] = await Promise.all([
     supabase.from('projects').select('*').in('id', projectIds.length ? projectIds : ['-1']),
@@ -44,18 +44,9 @@ export default async function ProposalCheckPage({ searchParams }: { searchParams
   const allItems = (allData ?? []) as BuyItem[];
   const canRead = extractConfigured();
 
-  if (projectIds.length === 0) {
-    return (
-      <div>
-        <Link href="/admin/purchasing/plan" className="mb-4 inline-block text-sm text-ink-soft hover:text-navy">&larr; Buy plan</Link>
-        <p className="text-sm text-ink-soft">Tick some items on the buy plan first, then choose Check against proposal.</p>
-      </div>
-    );
-  }
-
   return (
     <div>
-      <Link href="/admin/purchasing/plan" className="mb-4 inline-block text-sm text-ink-soft hover:text-navy">&larr; Buy plan</Link>
+      <Link href={`/admin/projects/${projectId}/purchasing`} className="mb-4 inline-block text-sm text-ink-soft hover:text-navy">&larr; Purchasing</Link>
       <h1 className="mb-4 text-xl font-semibold text-navy">Proposal check</h1>
 
       {projectIds.map((pid) => {
@@ -145,7 +136,7 @@ export default async function ProposalCheckPage({ searchParams }: { searchParams
                 </div>
 
                 {poIds && (
-                  <Link href={`/admin/purchasing/plan/po?${poIds}`} className="inline-block rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white">
+                  <Link href={`/admin/projects/${projectId}/purchasing/po?${poIds}`} className="inline-block rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white">
                     Generate PO from these items →
                   </Link>
                 )}

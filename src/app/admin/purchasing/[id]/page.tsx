@@ -52,7 +52,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
 
   return (
     <div>
-      <Link href="/admin/purchasing" className="mb-4 inline-block text-sm text-ink-soft hover:text-navy">
+      <Link href={p.project_id != null ? `/admin/projects/${p.project_id}/purchasing` : '/admin/purchasing'} className="mb-4 inline-block text-sm text-ink-soft hover:text-navy">
         &larr; Purchasing
       </Link>
 

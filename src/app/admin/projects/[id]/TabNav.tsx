@@ -10,6 +10,7 @@ const TABS = [
   { href: '/punchlist', label: 'Punch List' },
   { href: '/financials', label: 'Financials' },
   { href: '/profitability', label: 'Profitability' },
+  { href: '/purchasing', label: 'Purchasing' },
   { href: '/changeorders', label: 'Change Orders' },
   { href: '/subcontractors', label: 'Subcontractors' },
   { href: '/documents', label: 'Documents' },

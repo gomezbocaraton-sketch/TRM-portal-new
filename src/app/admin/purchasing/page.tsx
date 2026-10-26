@@ -36,9 +36,6 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold text-navy">Purchasing</h1>
         <div className="flex flex-wrap gap-2">
-          <Link href="/admin/purchasing/plan" className="rounded-lg border border-accent px-4 py-2 text-sm font-semibold text-accent hover:bg-accent-tint">
-            Buy plan
-          </Link>
           <Link href="/admin/purchasing/new" className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white">
             New purchase
           </Link>
