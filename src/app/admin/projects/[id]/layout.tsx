@@ -22,7 +22,7 @@ export default async function ProjectLayout({
   if (!project) notFound();
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-6 sm:px-8 sm:py-10">
+    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-10">
       <Link href="/admin" className="mb-2 inline-block text-sm text-ink-soft hover:text-navy">
         &larr; Projects
       </Link>

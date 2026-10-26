@@ -360,22 +360,48 @@ export async function addDraftItems(projectId: string, drafts: DraftItem[]): Pro
   });
 }
 
-// Plan files are saved on the project Documents tab (category Plans), so they show in both places.
+// Plan files are saved on the project Documents tab (category Plans), so they show in every place that lists plans.
+// Plans get amended, so each file has a label (Original, Amendment 1...) and the date printed or signed on the plan.
 export async function uploadPlanFile(projectId: string, formData: FormData): Promise<Outcome> {
   return guard(async () => {
     const path = String(formData.get('file') ?? '').trim();
     if (!path) throw new Error('Please choose a file first and wait for it to finish uploading.');
+    const label = String(formData.get('label') ?? '').trim();
+    const planDate = String(formData.get('planDate') ?? '').trim();
+    if (!planDate) throw new Error('Enter the date on the plans (the date they were signed or issued).');
     const supabase = await createClient();
-    const { error } = await supabase.from('documents').insert({
-      project_id: projectId,
-      category: 'plans',
-      file_name: path.split('/').pop() ?? path,
-      storage_key: path,
-      notes: 'Added from Purchasing',
-    });
-    if (error) throw new Error(error.message);
+    const { data, error } = await supabase
+      .from('documents')
+      .insert({
+        project_id: projectId,
+        category: 'plans',
+        file_name: path.split('/').pop() ?? path,
+        storage_key: path,
+        notes: label || 'Plans',
+        plan_date: planDate,
+      })
+      .select('id')
+      .single();
+    if (error) {
+      if (error.message.includes('plan_date')) throw new Error('The database is not ready for plan dates yet. Run the plan date SQL in Supabase first.');
+      throw new Error(error.message);
+    }
+    if (formData.get('replaces') === 'on' && data) {
+      await supabase
+        .from('documents')
+        .update({ version_status: 'superseded' })
+        .eq('project_id', projectId)
+        .eq('category', 'plans')
+        .neq('id', data.id);
+    }
     refresh();
   });
+}
+
+export async function setPlanStatus(docId: number, status: 'current' | 'superseded'): Promise<void> {
+  const supabase = await createClient();
+  await supabase.from('documents').update({ version_status: status }).eq('id', docId).in('category', ['plans', 'appliances_specs']);
+  refresh();
 }
 
 export async function removePlanFile(docId: number, storageKey: string): Promise<void> {

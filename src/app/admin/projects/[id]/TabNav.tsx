@@ -24,7 +24,7 @@ export default function TabNav({ projectId }: { projectId: number }) {
   const base = `/admin/projects/${projectId}`;
 
   return (
-    <div className="mb-8 flex gap-1 overflow-x-auto whitespace-nowrap border-b border-line">
+    <div className="mb-8 flex flex-wrap gap-x-1 border-b border-line">
       {TABS.map((tab) => {
         const href = `${base}${tab.href}`;
         const isActive = tab.href === '' ? pathname === base : pathname.startsWith(href);

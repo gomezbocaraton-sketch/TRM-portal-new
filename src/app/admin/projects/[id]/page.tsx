@@ -3,6 +3,7 @@ import { updateProjectInfo, updateDocumentDates, uploadEstimateOrContract, uploa
 import { deleteDocument } from './documents/actions';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
 import { DropFileInput } from '@/components/DropFileInput';
+import { PlansBox } from '@/components/PlansBox';
 
 export default async function OverviewTab({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -102,6 +103,8 @@ export default async function OverviewTab({ params }: { params: Promise<{ id: st
             </div>
           </FormWithFeedback>
         </div>
+
+        <PlansBox projectId={String(projectId)} />
 
         <div className="mb-4 rounded-lg border border-line p-4">
           <p className="mb-2 text-sm font-medium text-navy">Estimate file</p>

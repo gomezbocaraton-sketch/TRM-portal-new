@@ -14,9 +14,8 @@ import {
   type Urgency,
 } from '@/lib/buyplan';
 import { extractConfigured } from '@/lib/proposal-extract';
-import { FormWithFeedback as PlanUploadForm } from '@/components/FormWithFeedback';
-import { DropFileInput } from '@/components/DropFileInput';
-import { addBuyItem, removePlanFile, uploadPlanFile } from './actions';
+import { PlansBox } from '@/components/PlansBox';
+import { addBuyItem } from './actions';
 import { ReadPlansPanel } from './ReadPlansPanel';
 
 export const maxDuration = 60;
@@ -48,7 +47,6 @@ export default async function ProjectPurchasingPage({
     supabase.from('purchases').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
     supabase.from('documents').select('id, file_name, storage_key, version_status, uploaded_at, category').eq('project_id', projectId).in('category', ['plans', 'appliances_specs']).order('uploaded_at', { ascending: false }),
   ]);
-  const planList = (planDocs ?? []) as Row[];
   const planFiles = (planDocs ?? []).filter((d) => d.version_status !== 'superseded' && String(d.storage_key).toLowerCase().endsWith('.pdf')).length;
   const items = (itemData ?? []) as BuyItem[];
   const milestones = (msData ?? []) as Row[];
@@ -88,32 +86,7 @@ export default async function ProjectPurchasingPage({
         Orders over {money(ctx.threshold)} need approval from {approverName}; orders of {money(ctx.threshold)} or less are approved automatically.
       </p>
 
-      <div className="mb-5 rounded-card border border-line bg-white p-4 sm:p-6">
-        <p className="mb-1 text-sm font-semibold text-navy">Plans</p>
-        <p className="mb-3 text-xs text-ink-soft">Upload the plan sheets here (PDF). They are also saved on the Documents tab. The button below reads them to draft the list of items to buy.</p>
-        {planList.length > 0 && (
-          <ul className="mb-4 space-y-2">
-            {planList.map((d) => (
-              <li key={String(d.id)} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-3 py-2 text-sm">
-                <span className="text-ink">
-                  {String(d.file_name)}
-                  <span className="ml-2 text-xs text-ink-soft">
-                    {new Date(String(d.uploaded_at)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                    {String(d.version_status) === 'superseded' ? ' · superseded (not read)' : ''}
-                    {!String(d.storage_key).toLowerCase().endsWith('.pdf') ? ' · not a PDF (not read)' : ''}
-                  </span>
-                </span>
-                <form action={removePlanFile.bind(null, Number(d.id), String(d.storage_key))}>
-                  <button className="text-xs text-red-700 underline">Remove</button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        )}
-        <PlanUploadForm action={uploadPlanFile.bind(null, projectId)} submitLabel="Save plan file" pendingLabel="Saving…">
-          <DropFileInput name="file" pathPrefix={`${projectId}/plans`} />
-        </PlanUploadForm>
-      </div>
+      <PlansBox projectId={projectId} note="The button below reads the plans marked Current to draft the list of items to buy." />
 
       <ReadPlansPanel
         projectId={projectId}
