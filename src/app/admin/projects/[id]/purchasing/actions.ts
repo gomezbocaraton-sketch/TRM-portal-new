@@ -359,3 +359,28 @@ export async function addDraftItems(projectId: string, drafts: DraftItem[]): Pro
     refresh();
   });
 }
+
+// Plan files are saved on the project Documents tab (category Plans), so they show in both places.
+export async function uploadPlanFile(projectId: string, formData: FormData): Promise<Outcome> {
+  return guard(async () => {
+    const path = String(formData.get('file') ?? '').trim();
+    if (!path) throw new Error('Please choose a file first and wait for it to finish uploading.');
+    const supabase = await createClient();
+    const { error } = await supabase.from('documents').insert({
+      project_id: projectId,
+      category: 'plans',
+      file_name: path.split('/').pop() ?? path,
+      storage_key: path,
+      notes: 'Added from Purchasing',
+    });
+    if (error) throw new Error(error.message);
+    refresh();
+  });
+}
+
+export async function removePlanFile(docId: number, storageKey: string): Promise<void> {
+  const supabase = await createClient();
+  await supabase.storage.from('project-files').remove([storageKey]);
+  await supabase.from('documents').delete().eq('id', docId).in('category', ['plans', 'appliances_specs']);
+  refresh();
+}
