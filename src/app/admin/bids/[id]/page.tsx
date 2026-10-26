@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { markBidWon } from '../actions';
 import { markBidSent, markBidWorking } from '../document-actions';
+import { saveBidMatterport } from '../matterport-actions';
+import { FormWithFeedback } from '@/components/FormWithFeedback';
 import { BidDocuments, type BidDoc } from './BidDocuments';
 import Link from 'next/link';
 
@@ -33,6 +35,8 @@ export default async function BidDetailPage({ params }: { params: Promise<{ id: 
     uploadedLabel: formatTimestamp(f.uploaded_at),
   }));
 
+  const saveMatterportWithId = saveBidMatterport.bind(null, bidId);
+  const matterportUrl: string = typeof bid.matterport_url === 'string' ? bid.matterport_url : '';
   const markWonWithId = markBidWon.bind(null, bidId);
   const markSentWithId = markBidSent.bind(null, bidId);
   const markWorkingWithId = markBidWorking.bind(null, bidId);
@@ -66,6 +70,25 @@ export default async function BidDetailPage({ params }: { params: Promise<{ id: 
           <div><p className="text-xs font-medium text-ink-soft">Phone</p><p className="text-ink">{bid.client_phone || '—'}</p></div>
           <div><p className="text-xs font-medium text-ink-soft">Email</p><p className="text-ink">{bid.client_email || '—'}</p></div>
           <div><p className="text-xs font-medium text-ink-soft">Bid amount</p><p className="text-ink">{bid.bid_amount != null ? `$${Number(bid.bid_amount).toLocaleString()}` : '—'}</p></div>
+        </div>
+
+        <div className="mb-6 rounded-lg border border-line p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-navy">Matterport</p>
+            {matterportUrl && (
+              <a href={matterportUrl} target="_blank" rel="noreferrer" className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white">
+                Open Matterport ↗
+              </a>
+            )}
+          </div>
+          <FormWithFeedback action={saveMatterportWithId} submitLabel={matterportUrl ? 'Update link' : 'Save link'}>
+            <input
+              name="matterportUrl"
+              defaultValue={matterportUrl}
+              placeholder="Matterport share link (use it to scope the job before bidding)"
+              className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm"
+            />
+          </FormWithFeedback>
         </div>
 
         {stage !== 'won' && (

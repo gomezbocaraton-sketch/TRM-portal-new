@@ -66,11 +66,19 @@ export default async function AdminDashboard() {
                   <p className="mt-1 text-xs text-ink-soft">{p.completion}% overall</p>
                 </div>
               </Link>
-              <form action={archiveWithId}>
-                <button className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white sm:ml-4">
-                  Archive
-                </button>
-              </form>
+              <div className="flex items-center gap-2 sm:ml-4">
+                <Link
+                  href={`/admin/projects/${p.id}/matterport`}
+                  className="rounded-lg border border-accent px-4 py-2 text-sm font-semibold text-accent hover:bg-accent-tint"
+                >
+                  Matterport
+                </Link>
+                <form action={archiveWithId}>
+                  <button className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white">
+                    Archive
+                  </button>
+                </form>
+              </div>
             </div>
           );
         })}

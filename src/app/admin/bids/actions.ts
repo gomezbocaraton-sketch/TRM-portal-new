@@ -10,6 +10,11 @@ export async function createBid(formData: FormData) {
   const clientName = String(formData.get('clientName') ?? '').trim();
   if (!clientName) throw new Error('Client name is required.');
 
+  const matterportUrl = String(formData.get('matterportUrl') ?? '').trim();
+  if (matterportUrl && !/^https?:\/\/\S+$/i.test(matterportUrl)) {
+    throw new Error('Paste the full Matterport link, starting with https://');
+  }
+
   const { data, error } = await supabase
     .from('bids')
     .insert({
@@ -20,6 +25,7 @@ export async function createBid(formData: FormData) {
       client_email: String(formData.get('email') ?? '').trim() || null,
       project_type: String(formData.get('projectType') ?? '').trim() || null,
       bid_amount: formData.get('bidAmount') ? parseFloat(String(formData.get('bidAmount'))) : null,
+      ...(matterportUrl ? { matterport_url: matterportUrl } : {}),
     })
     .select('id')
     .single();
@@ -79,6 +85,16 @@ export async function markBidWon(bidId: number) {
     .select('id')
     .single();
   if (projectError) throw new Error(projectError.message);
+
+  // Keep the pre-bid Matterport scan with the new project (best effort; the bid is converted either way).
+  if (typeof bid.matterport_url === 'string' && bid.matterport_url) {
+    await supabase.from('matterport_tours').insert({
+      project_id: project.id,
+      title: 'Pre-bid scan',
+      matterport_url: bid.matterport_url,
+      scan_date: new Date().toISOString().slice(0, 10),
+    });
+  }
 
   const { error: updateError } = await supabase
     .from('bids')
