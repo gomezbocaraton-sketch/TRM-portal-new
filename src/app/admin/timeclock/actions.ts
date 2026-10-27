@@ -143,3 +143,38 @@ export async function deletePunch(punchId: number): Promise<Result> {
   refresh();
   return { ok: true };
 }
+
+// Approving locks the shift. "Reopen" sends it back to the employee to fix.
+export async function approvePunch(punchId: number): Promise<Result> {
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  const { error } = await supabase
+    .from('time_punches')
+    .update({ status: 'approved', approved_at: new Date().toISOString(), approved_by: auth.user?.email ?? 'staff' })
+    .eq('id', punchId);
+  if (error) return { ok: false, error: error.message };
+  refresh();
+  return { ok: true };
+}
+
+export async function approveAllSubmitted(punchIds: number[]): Promise<Result> {
+  if (punchIds.length === 0) return { ok: true };
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  const { error } = await supabase
+    .from('time_punches')
+    .update({ status: 'approved', approved_at: new Date().toISOString(), approved_by: auth.user?.email ?? 'staff' })
+    .in('id', punchIds)
+    .eq('status', 'submitted');
+  if (error) return { ok: false, error: error.message };
+  refresh();
+  return { ok: true };
+}
+
+export async function reopenPunch(punchId: number): Promise<Result> {
+  const supabase = await createClient();
+  const { error } = await supabase.from('time_punches').update({ status: 'open', approved_at: null, approved_by: null, submitted_at: null }).eq('id', punchId);
+  if (error) return { ok: false, error: error.message };
+  refresh();
+  return { ok: true };
+}

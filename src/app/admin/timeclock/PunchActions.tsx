@@ -1,18 +1,22 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { deletePunch, markReviewed, updatePunchTimes } from './actions';
+import { approvePunch, deletePunch, markReviewed, reopenPunch, updatePunchTimes } from './actions';
 
 export function PunchActions({
   id,
   inLocal,
   outLocal,
   needsReview,
+  status = 'open',
+  finished = true,
 }: {
   id: number;
   inLocal: string;
   outLocal: string;
   needsReview: boolean;
+  status?: string;
+  finished?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [editing, setEditing] = useState(false);
@@ -34,6 +38,16 @@ export function PunchActions({
   return (
     <div className="mt-1">
       <div className="flex flex-wrap gap-3">
+        {finished && status !== 'approved' && (
+          <button disabled={pending} className={link} onClick={() => run(() => approvePunch(id))}>
+            Approve
+          </button>
+        )}
+        {status === 'approved' && (
+          <button disabled={pending} className={link} onClick={() => run(() => reopenPunch(id))}>
+            Reopen
+          </button>
+        )}
         {needsReview && (
           <button disabled={pending} className={link} onClick={() => run(() => markReviewed(id))}>
             Mark reviewed
