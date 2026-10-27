@@ -17,7 +17,39 @@ export type Purchase = {
   decided_by_name: string | null;
   decided_at: string | null;
   decision_note: string | null;
+  closed_at?: string | null;
+  closed_by_name?: string | null;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  invoice_amount?: number | string | null;
+  cost_id?: string | null;
+  qbo_bill_id?: string | null;
+  qbo_synced_at?: string | null;
+  qbo_error?: string | null;
 };
+
+// The categories used on the Profitability tab, and which one an order's items usually belong to.
+export const COST_CATEGORIES = [
+  'Plumbing', 'Electrical', 'HVAC', 'Drywall', 'Framing', 'Flooring', 'Paint', 'Roofing',
+  'Windows & Doors', 'Cabinets & Countertops', 'General Construction', 'Permits',
+  'Equipment Rental', 'Dumpster & Hauling', 'Materials', 'Labor', 'Subcontractor', 'Other',
+];
+export const TRADE_TO_COST_CATEGORY: Record<string, string> = {
+  'General construction': 'General Construction',
+  Electrical: 'Electrical',
+  Plumbing: 'Plumbing',
+  HVAC: 'HVAC',
+  Paint: 'Paint',
+  Millwork: 'Cabinets & Countertops',
+  Finishes: 'Materials',
+  'Doors, windows & hardware': 'Windows & Doors',
+  'Appliances & equipment': 'Materials',
+  Other: 'Materials',
+};
+
+export function isClosed(p: { closed_at?: string | null }): boolean {
+  return Boolean(p.closed_at);
+}
 
 export const DEFAULT_APPROVER = 'vgomez@codeconsultationnyc.com';
 export const DEFAULT_THRESHOLD = 1000;

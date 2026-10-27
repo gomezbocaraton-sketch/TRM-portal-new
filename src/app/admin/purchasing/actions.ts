@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 import { getPurchasingContext, PURCHASE_DOC_CATEGORIES } from '@/lib/purchasing';
 import { sendApprovalRequest } from '@/lib/purchasing-email';
+import { getConnection } from '@/lib/qbo';
+import { createBill, ensureVendor, pickExpenseAccount } from '@/lib/qbo-bills';
 
 type ItemInput = { description: string; quantity: string; unit: string; unitPrice: string };
 
@@ -199,4 +201,145 @@ export async function deletePurchaseDocument(purchaseId: number, fileId: number 
   if (error) throw new Error(error.message);
   if (file?.storage_key) await supabase.storage.from('project-files').remove([file.storage_key]);
   refresh(purchaseId);
+}
+
+// Books the closed order to QuickBooks as a bill from the vendor, tied to the project's QuickBooks customer.
+// Returns the problem as text (and saves it on the order) instead of failing, so closing the order never depends on QuickBooks.
+async function sendBillToQbo(purchaseId: number): Promise<string | null> {
+  const supabase = await createClient();
+  const { data: p } = await supabase.from('purchases').select('*').eq('id', purchaseId).maybeSingle();
+  if (!p) return 'Order not found.';
+  const fail = async (msg: string) => {
+    await supabase.from('purchases').update({ qbo_error: msg }).eq('id', purchaseId);
+    return msg;
+  };
+  try {
+    if (p.qbo_bill_id) return null;
+    if (!(Number(p.invoice_amount) > 0)) return await fail('There is no invoice amount to send.');
+    const vendor = String(p.vendor ?? '').trim();
+    if (!vendor || vendor === 'Vendor to be chosen') return await fail('Set the real vendor name on the order before sending it to QuickBooks.');
+    const conn = await getConnection();
+    if (!conn) return await fail('QuickBooks is not connected. Connect it on the QuickBooks page, then click Send to QuickBooks.');
+    const vendorId = await ensureVendor(conn, vendor);
+    const accountId = await pickExpenseAccount(conn);
+    let customerId: string | null = null;
+    if (p.project_id != null) {
+      const { data: link } = await supabase.from('project_qbo_link').select('customer_id').eq('project_id', String(p.project_id)).maybeSingle();
+      customerId = link?.customer_id ? String(link.customer_id) : null;
+    }
+    const po = 'PO-' + String(p.id).padStart(4, '0');
+    const billId = await createBill(conn, {
+      vendorId,
+      accountId,
+      txnDate: String(p.invoice_date ?? new Date().toISOString().slice(0, 10)),
+      docNumber: String(p.invoice_number || po),
+      amount: Number(p.invoice_amount),
+      description: `${po} materials purchase`,
+      customerId,
+      note: `Created from ${po} in the TRM portal`,
+    });
+    await supabase.from('purchases').update({ qbo_bill_id: billId, qbo_synced_at: new Date().toISOString(), qbo_error: null }).eq('id', purchaseId);
+    await supabase.from('purchase_events').insert({
+      purchase_id: purchaseId,
+      event: 'Bill sent to QuickBooks',
+      who: 'System',
+      note: customerId ? `Bill ${billId}, linked to the project's customer` : `Bill ${billId} (this project is not linked to a QuickBooks customer yet)`,
+    });
+    return null;
+  } catch (e) {
+    return await fail(e instanceof Error ? e.message : 'QuickBooks did not accept the bill.');
+  }
+}
+
+// Closes an approved order: the items were bought. Records the invoice as a project cost (Profitability) and a QuickBooks bill.
+export async function closePurchase(purchaseId: number, formData: FormData): Promise<{ error?: string }> {
+  try {
+    const supabase = await createClient();
+    const ctx = await getPurchasingContext(supabase);
+    const { data: p } = await supabase.from('purchases').select('*').eq('id', purchaseId).maybeSingle();
+    if (!p) return { error: 'Order not found.' };
+    if (p.status !== 'approved') return { error: 'Only an approved order can be closed.' };
+    if (p.closed_at) return { error: 'This order is already closed.' };
+
+    const invoiceNumber = String(formData.get('invoiceNumber') ?? '').trim();
+    const invoiceDate = String(formData.get('invoiceDate') ?? '').trim() || new Date().toISOString().slice(0, 10);
+    const amount = num(String(formData.get('invoiceAmount') ?? ''));
+    const category = String(formData.get('category') ?? '').trim() || 'Materials';
+    const milestone = String(formData.get('milestone') ?? '').trim();
+    const filePath = String(formData.get('file') ?? '').trim();
+    const sendQbo = formData.get('sendQbo') === 'on';
+    if (!(amount > 0)) return { error: 'Enter the invoice amount.' };
+
+    const now = new Date().toISOString();
+    const { error: closeErr } = await supabase
+      .from('purchases')
+      .update({ closed_at: now, closed_by_name: ctx.name, invoice_number: invoiceNumber || null, invoice_date: invoiceDate, invoice_amount: amount })
+      .eq('id', purchaseId)
+      .is('closed_at', null);
+    if (closeErr) {
+      if (closeErr.message.includes('closed_at') || closeErr.message.includes('invoice_')) {
+        return { error: 'The database is not ready for closing orders yet. Run the close-order SQL in Supabase first.' };
+      }
+      return { error: closeErr.message };
+    }
+
+    let costId: string | null = null;
+    if (p.project_id != null) {
+      const { data: cost, error: costErr } = await supabase
+        .from('project_costs')
+        .insert({
+          project_id: p.project_id,
+          category,
+          vendor: p.vendor,
+          amount,
+          cost_date: invoiceDate,
+          milestone_id: milestone && milestone !== 'general' ? milestone : null,
+          doc_type: filePath ? 'Invoice' : null,
+          description: `PO-${String(p.id).padStart(4, '0')}${invoiceNumber ? ` · invoice ${invoiceNumber}` : ''}`,
+          file_name: filePath ? filePath.split('/').pop() ?? filePath : null,
+          storage_key: filePath || null,
+        })
+        .select('id')
+        .single();
+      if (costErr) {
+        await supabase.from('purchases').update({ closed_at: null, invoice_number: null, invoice_date: null, invoice_amount: null }).eq('id', purchaseId);
+        return { error: `The cost could not be added to Profitability: ${costErr.message}` };
+      }
+      costId = String(cost.id);
+      await supabase.from('purchases').update({ cost_id: costId }).eq('id', purchaseId);
+    }
+
+    if (filePath) {
+      await supabase.from('purchase_files').insert({
+        purchase_id: purchaseId,
+        file_name: filePath.split('/').pop() ?? filePath,
+        storage_key: filePath,
+        category: 'Invoice',
+      });
+    }
+    await supabase.from('purchase_events').insert({
+      purchase_id: purchaseId,
+      event: 'Closed: items bought',
+      who: ctx.name,
+      note: `Invoice ${invoiceNumber || '(no number)'} for ${'$' + amount.toFixed(2)}${costId ? ', added to Profitability' : ''}`,
+    });
+
+    if (sendQbo) await sendBillToQbo(purchaseId);
+
+    refresh(purchaseId);
+    if (p.project_id != null) revalidatePath(`/admin/projects/${p.project_id}/profitability`);
+    return {};
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Something went wrong.' };
+  }
+}
+
+export async function retryQboBill(purchaseId: number): Promise<{ error?: string }> {
+  try {
+    const err = await sendBillToQbo(purchaseId);
+    refresh(purchaseId);
+    return err ? { error: err } : {};
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Something went wrong.' };
+  }
 }

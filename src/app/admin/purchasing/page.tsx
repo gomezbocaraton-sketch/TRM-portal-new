@@ -15,7 +15,7 @@ function shortDate(iso: string): string {
 
 export default async function PurchasingPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab } = await searchParams;
-  const active = tab === 'approved' || tab === 'rejected' ? tab : 'pending';
+  const active = tab === 'approved' || tab === 'closed' || tab === 'rejected' ? tab : 'pending';
   const supabase = await createClient();
   const ctx = await getPurchasingContext(supabase);
 
@@ -26,8 +26,9 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
 
   const all = (data ?? []) as Purchase[];
   const projectNames = new Map(((projects ?? []) as Row[]).map((p) => [String(p.id), projectLabel(p)]));
-  const count = (s: string) => all.filter((p) => p.status === s).length;
-  const rows = all.filter((p) => p.status === active);
+  const bucket = (p: Purchase) => (p.closed_at ? 'closed' : p.status);
+  const count = (s: string) => all.filter((p) => bucket(p) === s).length;
+  const rows = all.filter((p) => bucket(p) === active);
 
   const tabClass = (on: boolean) =>
     `rounded-lg px-4 py-2 text-sm font-semibold ${on ? 'bg-navy text-white' : 'border border-line bg-white text-ink-soft hover:border-accent'}`;
@@ -59,7 +60,10 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
           Waiting for approval ({count('pending')})
         </Link>
         <Link href="/admin/purchasing?tab=approved" className={tabClass(active === 'approved')}>
-          Approved ({count('approved')})
+          Approved, open ({count('approved')})
+        </Link>
+        <Link href="/admin/purchasing?tab=closed" className={tabClass(active === 'closed')}>
+          Closed ({count('closed')})
         </Link>
         <Link href="/admin/purchasing?tab=rejected" className={tabClass(active === 'rejected')}>
           Rejected ({count('rejected')})
@@ -68,7 +72,7 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
 
       {rows.length === 0 ? (
         <p className="text-sm text-ink-soft">
-          {active === 'pending' ? 'Nothing is waiting for approval.' : active === 'approved' ? 'No approved orders yet.' : 'No rejected orders.'}
+          {active === 'pending' ? 'Nothing is waiting for approval.' : active === 'approved' ? 'No open approved orders.' : active === 'closed' ? 'No closed orders yet.' : 'No rejected orders.'}
         </p>
       ) : (
         <div className="space-y-3">
@@ -89,6 +93,9 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
+                  {p.closed_at && (
+                    <span className="rounded-full bg-success-tint px-2 py-0.5 text-xs font-semibold text-success">Closed</span>
+                  )}
                   {p.auto_approved && (
                     <span className="rounded-full bg-paper px-2 py-0.5 text-xs font-medium text-ink-soft">Auto-approved</span>
                   )}

@@ -245,13 +245,13 @@ export async function createPoFromItems(formData: FormData): Promise<Outcome> {
     if (ids.length === 0) throw new Error('Choose at least one item.');
     const supabase = await createClient();
     const { data } = await supabase.from('buy_items').select('*').in('id', ids).eq('status', 'planned');
-    const items = (data ?? []) as BuyItem[];
-    if (items.length === 0) throw new Error('Those items were already ordered.');
-    const clientOnes = items.filter((i) => i.client_buys);
+    const picked = (data ?? []) as BuyItem[];
+    if (picked.length === 0) throw new Error('Those items were already ordered.');
+    const clientOnes = picked.filter((i) => i.client_buys);
     if (clientOnes.length > 0) throw new Error(`"${clientOnes[0].name}" is marked client buying. Move it back to our purchasing, or take it off this order.`);
-    for (const it of items) {
-      if (!(Number(it.unit_price) > 0)) throw new Error(`Enter a price for "${it.name}" first (use Find prices).`);
-    }
+    // Items with a price get an order; the rest stay in the buy plan until they are priced.
+    const items = picked.filter((i) => Number(i.unit_price) > 0);
+    if (items.length === 0) throw new Error('None of these items has a price yet. Use Find prices first.');
 
     const projectIds = Array.from(new Set(items.map((i) => i.project_id)));
     const [{ data: proposalData }, { data: allData }] = await Promise.all([

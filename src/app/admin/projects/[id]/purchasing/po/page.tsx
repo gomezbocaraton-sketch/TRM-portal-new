@@ -41,6 +41,7 @@ export default async function GeneratePoPage({ params, searchParams }: { params:
   const starts = new Map(((msData ?? []) as Row[]).map((m) => [String(m.id), (m.planned_start_date as string | null) ?? null]));
   const projectName = new Map(((projectData ?? []) as Row[]).map((p) => [String(p.id), String(p.name ?? p.address ?? p.client_name ?? `Project ${p.id}`)]));
 
+  const priced = items.filter((i) => Number(i.unit_price) > 0);
   let open = 0;
   let hasProposal = false;
   const diffNotes: { project: string; text: string }[] = [];
@@ -48,17 +49,28 @@ export default async function GeneratePoPage({ params, searchParams }: { params:
     const prop = proposal.filter((p) => p.project_id === pid);
     if (prop.length === 0) continue;
     hasProposal = true;
-    const res = checkAgainstProposal(items.filter((i) => i.project_id === pid), prop, allItems.filter((i) => i.project_id === pid));
+    const res = checkAgainstProposal(priced.filter((i) => i.project_id === pid), prop, allItems.filter((i) => i.project_id === pid));
     open += res.rows.filter((r) => r.kind !== 'match' && !r.item.ack_note).length;
     for (const r of res.rows.filter((x) => x.kind !== 'match' && !x.item.ack_note)) {
       diffNotes.push({ project: projectName.get(pid) ?? '', text: `${r.item.name}: ${r.detail}` });
     }
   }
 
-  const total = items.reduce((s, i) => s + Number(i.quantity) * Number(i.unit_price), 0);
-  const needsApproval = total > ctx.threshold;
+  const total = priced.reduce((s, i) => s + Number(i.quantity) * Number(i.unit_price), 0);
   const approverName = ctx.approverEmail === 'vgomez@codeconsultationnyc.com' ? 'Vanessa Gomez Botero' : ctx.approverEmail;
   const missingPrice = items.filter((i) => !(Number(i.unit_price) > 0));
+  // One order is made for each project and vendor. Each order is approved on its own total.
+  const orderMap = new Map<string, { vendor: string; project: string; count: number; total: number }>();
+  for (const i of priced) {
+    const vendor = (i.vendor ?? '').trim() || 'Vendor to be chosen';
+    const key = `${i.project_id}||${vendor}`;
+    const cur = orderMap.get(key) ?? { vendor, project: projectName.get(i.project_id) ?? '', count: 0, total: 0 };
+    cur.count += 1;
+    cur.total += Number(i.quantity) * Number(i.unit_price);
+    orderMap.set(key, cur);
+  }
+  const orders = [...orderMap.values()].map((o) => ({ ...o, total: Math.round(o.total * 100) / 100 }));
+  const needApproval = orders.filter((o) => o.total > ctx.threshold);
   const checkQuery = items.map((i) => `ids=${i.id}`).join('&');
 
   return (
@@ -96,15 +108,29 @@ export default async function GeneratePoPage({ params, searchParams }: { params:
         <p className="mt-2 text-xs text-ink-soft">One order is created for each project and vendor.</p>
       </div>
 
-      {needsApproval ? (
-        <div className="mb-4 rounded-card border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          This is over {money(ctx.threshold)}, so {approverName} must approve it before it is final.
+      <div className="mb-4 rounded-card border border-line bg-white p-4 sm:p-6">
+        <p className="mb-1 text-sm font-semibold text-navy">
+          {orders.length} purchase order{orders.length === 1 ? '' : 's'} will be created
+        </p>
+        <p className="mb-3 text-xs text-ink-soft">
+          One order for each vendor. Only an order over {money(ctx.threshold)} needs {approverName}&apos;s approval; the rest are approved automatically.
+        </p>
+        <div className="space-y-2">
+          {orders.map((o) => (
+            <div key={`${o.project}-${o.vendor}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-4 py-3">
+              <span className="text-sm text-ink">
+                <span className="font-semibold text-navy">{o.vendor}</span> · {o.count} item{o.count === 1 ? '' : 's'}
+              </span>
+              <span className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-navy">{money(o.total)}</span>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${o.total > ctx.threshold ? 'bg-accent-tint text-accent-deep' : 'bg-success-tint text-success'}`}>
+                  {o.total > ctx.threshold ? `Needs ${approverName.split(' ')[0]}'s approval` : 'Approved automatically'}
+                </span>
+              </span>
+            </div>
+          ))}
         </div>
-      ) : (
-        <div className="mb-4 rounded-card border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">
-          {money(ctx.threshold)} or less, so it is approved automatically.
-        </div>
-      )}
+      </div>
 
       {!hasProposal && (
         <div className="mb-4 rounded-card border border-line bg-white px-4 py-3 text-sm text-ink-soft">
@@ -122,12 +148,33 @@ export default async function GeneratePoPage({ params, searchParams }: { params:
         </div>
       )}
 
-      {missingPrice.length > 0 ? (
-        <p className="rounded-card border border-line bg-white p-4 text-sm text-ink-soft">Every item needs a price before the order can be created. Use Find prices on the item first.</p>
+      {missingPrice.length > 0 && (
+        <div className="mb-4 rounded-card border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+          <p className="mb-1 font-semibold">{missingPrice.length} item{missingPrice.length === 1 ? ' has' : 's have'} no price yet and will stay in the buy plan:</p>
+          <ul className="list-disc pl-5">
+            {missingPrice.map((i) => (
+              <li key={i.id}>
+                {i.name} · <Link className="underline" href={`/admin/projects/${projectId}/purchasing/item/${i.id}`}>find price</Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {priced.length === 0 ? (
+        <p className="rounded-card border border-line bg-white p-4 text-sm text-ink-soft">None of these items has a price yet. Use Find prices on the items first.</p>
       ) : (
         <div className="rounded-card border border-line bg-white p-4 sm:p-6">
-          <FormWithFeedback action={createPoFromItems} submitLabel={needsApproval ? `Send to ${approverName.split(' ')[0]} for approval` : 'Create PO (approved automatically)'} pendingLabel="Creating…">
-            {items.map((i) => (<input key={i.id} type="hidden" name="ids" value={i.id} />))}
+          <FormWithFeedback
+            action={createPoFromItems}
+            submitLabel={
+              needApproval.length === 0
+                ? `Create ${orders.length} PO${orders.length === 1 ? '' : 's'} (approved automatically)`
+                : `Create ${orders.length} PO${orders.length === 1 ? '' : 's'} (${needApproval.length} sent to ${approverName.split(' ')[0]} for approval)`
+            }
+            pendingLabel="Creating…"
+          >
+            {priced.map((i) => (<input key={i.id} type="hidden" name="ids" value={i.id} />))}
             {open > 0 && (
               <label className="mb-1 flex items-center gap-2 text-sm text-ink">
                 <input type="checkbox" name="reviewed" /> I reviewed the differences

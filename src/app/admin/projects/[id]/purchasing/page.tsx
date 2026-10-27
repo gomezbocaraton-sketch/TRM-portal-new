@@ -93,7 +93,9 @@ export default async function ProjectPurchasingPage({
   const approverName = ctx.approverEmail === 'vgomez@codeconsultationnyc.com' ? 'Vanessa Gomez Botero' : ctx.approverEmail;
 
   const badge = (p: Purchase) =>
-    p.status === 'approved'
+    p.closed_at
+      ? { text: 'Closed · bought', cls: 'bg-success-tint text-success' }
+      : p.status === 'approved'
       ? { text: p.auto_approved ? 'Auto-approved' : 'Approved', cls: 'bg-success-tint text-success' }
       : p.status === 'rejected'
         ? { text: 'Rejected', cls: 'bg-red-50 text-red-700' }

@@ -1,6 +1,11 @@
 import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
-import { formatWhen, getPurchasingContext, money, poNumber, PURCHASE_DOC_CATEGORIES, type Purchase } from '@/lib/purchasing';
+import { COST_CATEGORIES, formatWhen, getPurchasingContext, money, poNumber, PURCHASE_DOC_CATEGORIES, TRADE_TO_COST_CATEGORY, type Purchase } from '@/lib/purchasing';
+import { tradeOf } from '@/lib/buyplan';
+import { FormWithFeedback } from '@/components/FormWithFeedback';
+import { DropFileInput } from '@/components/DropFileInput';
+import { closePurchase } from '../actions';
+import { RetryQboButton } from './RetryQboButton';
 import { PurchaseDocuments, type PurchaseDoc } from './PurchaseDocuments';
 import { ApprovalPanel } from './ApprovalPanel';
 
@@ -38,8 +43,26 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
     uploadedLabel: formatWhen(String(f.uploaded_at ?? '')),
   }));
 
+  // Suggestions for the close form: the Profitability category and the schedule step most of the items belong to.
+  const { data: linked } = await supabase.from('buy_items').select('milestone_id').eq('purchase_id', purchaseId);
+  const { data: msList } = p.project_id != null
+    ? await supabase.from('project_milestones').select('id, name').eq('project_id', p.project_id).order('sort_order')
+    : { data: [] as Row[] };
+  const tally = new Map<string, number>();
+  for (const it of (items ?? []) as Row[]) {
+    const t = TRADE_TO_COST_CATEGORY[tradeOf(String(it.description))] ?? 'Materials';
+    tally.set(t, (tally.get(t) ?? 0) + 1);
+  }
+  const suggestedCategory = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Materials';
+  const msTally = new Map<string, number>();
+  for (const l of (linked ?? []) as Row[]) if (l.milestone_id != null) msTally.set(String(l.milestone_id), (msTally.get(String(l.milestone_id)) ?? 0) + 1);
+  const suggestedMilestone = [...msTally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'general';
+  const closed = Boolean(p.closed_at);
+
   const badge =
-    p.status === 'approved'
+    closed
+      ? { text: 'Closed · items bought', cls: 'bg-success-tint text-success' }
+      : p.status === 'approved'
       ? { text: p.auto_approved ? 'Auto-approved' : 'Approved', cls: 'bg-success-tint text-success' }
       : p.status === 'rejected'
         ? { text: 'Rejected', cls: 'bg-red-50 text-red-700' }
@@ -124,6 +147,84 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             }
           />
         </div>
+
+        {p.status === 'approved' && !closed && (
+          <div className="mb-6 border-t border-line pt-4">
+            <p className="mb-1 text-sm font-semibold text-navy">Close this order</p>
+            <p className="mb-3 text-xs text-ink-soft">
+              When the items are bought, enter the vendor&apos;s invoice. It is added to this project&apos;s costs on the Profitability tab and sent to QuickBooks as a bill.
+            </p>
+            <FormWithFeedback action={closePurchase.bind(null, p.id)} submitLabel="Mark as bought and close the order" pendingLabel="Closing…">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-ink-soft">Vendor invoice number</label>
+                  <input name="invoiceNumber" className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-ink-soft">Invoice date</label>
+                  <input type="date" name="invoiceDate" defaultValue={new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-ink-soft">Invoice amount *</label>
+                  <input name="invoiceAmount" defaultValue={Number(p.total).toFixed(2)} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-ink-soft">Profitability category</label>
+                  <select name="category" defaultValue={suggestedCategory} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm">
+                    {COST_CATEGORIES.map((c) => (<option key={c}>{c}</option>))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-ink-soft">Schedule step</label>
+                  <select name="milestone" defaultValue={suggestedMilestone} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm">
+                    {((msList ?? []) as Row[]).map((m) => (<option key={String(m.id)} value={String(m.id)}>{String(m.name)}</option>))}
+                    <option value="general">General (no step)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-ink-soft">Invoice file (optional)</label>
+                  <DropFileInput name="file" pathPrefix={`${p.project_id ?? 'general'}/costs`} compact />
+                </div>
+              </div>
+              <label className="mt-3 flex items-center gap-2 text-sm text-ink">
+                <input type="checkbox" name="sendQbo" defaultChecked /> Also send it to QuickBooks as a bill
+              </label>
+            </FormWithFeedback>
+          </div>
+        )}
+
+        {closed && (
+          <div className="mb-6 border-t border-line pt-4">
+            <p className="mb-3 text-sm font-semibold text-navy">Closed: items bought</p>
+            <div className="space-y-2 rounded-lg bg-paper px-4 py-3 text-sm text-ink">
+              <p>
+                Closed by {p.closed_by_name ?? 'staff'}, {formatWhen(p.closed_at ?? null)}. Invoice {p.invoice_number ? `#${p.invoice_number}` : '(no number)'} for {money(Number(p.invoice_amount ?? 0))}
+                {p.invoice_date ? `, dated ${p.invoice_date}` : ''}.
+              </p>
+              <p>
+                Profitability:{' '}
+                {p.cost_id ? (
+                  <>
+                    added as a cost. <Link className="text-accent underline" href={`/admin/projects/${p.project_id}/profitability`}>Open Profitability</Link>
+                  </>
+                ) : (
+                  'not added (this order has no project).'
+                )}
+              </p>
+              <div className="flex flex-wrap items-start gap-3">
+                <span>QuickBooks:</span>
+                {p.qbo_bill_id ? (
+                  <span className="font-semibold text-success">Bill {p.qbo_bill_id} created ✓</span>
+                ) : (
+                  <>
+                    <span className="text-red-700">{p.qbo_error ? `not sent: ${p.qbo_error}` : 'not sent yet'}</span>
+                    <RetryQboButton purchaseId={p.id} />
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mb-6 border-t border-line pt-4">
           <p className="mb-3 text-sm font-semibold text-navy">Documents</p>
