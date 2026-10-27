@@ -7,7 +7,6 @@ import { createPurchase } from '@/app/admin/purchasing/actions';
 import { searchPrices } from '@/lib/price-search';
 import { extractProposalLines } from '@/lib/proposal-extract';
 import { MAX_PLAN_BYTES, mergePlanItems, readPlans as readPlansWithAi, type PlanItem } from '@/lib/plans-read';
-import { PDFDocument } from 'pdf-lib';
 import { checkAgainstProposal, summarize, type ProposalItem } from '@/lib/proposal';
 import type { BuyItem } from '@/lib/buyplan';
 
@@ -277,94 +276,56 @@ export type DraftItem = {
   note: string;
 };
 
-// Large plan sets are read in parts so the file size and page limits do not matter. The screen runs the parts one by one:
-// planReadPlan lists the parts, readPlanChunk reads one part, finishPlanRead combines everything into the draft list.
-export type PlanPart = { storageKey: string; name: string; from: number; to: number; pages: number };
-
-const PART_PAGES = 10; // pages read per request, so each part finishes inside the time limit
-const MAX_TOTAL_PAGES = 400;
-
-async function projectPlanDocs(projectId: string) {
-  const supabase = await createClient();
-  const { data: docs } = await supabase
-    .from('documents')
-    .select('file_name, storage_key, version_status, category')
-    .eq('project_id', projectId)
-    .in('category', ['plans', 'appliances_specs'])
-    .order('uploaded_at', { ascending: false });
-  return {
-    supabase,
-    docs: (docs ?? []).filter((d) => d.version_status !== 'superseded' && String(d.storage_key).toLowerCase().endsWith('.pdf')),
-  };
-}
-
-export async function planReadPlan(projectId: string): Promise<{ error?: string; parts?: PlanPart[]; notes?: string[] }> {
+// Large plan sets are read in parts. The browser cuts the PDF into small page ranges (no server size or time limit applies there)
+// and uploads each part; the server then reads one small part at a time. The screen runs the parts one by one.
+export async function planReadFiles(projectId: string): Promise<{ error?: string; files?: { name: string; url: string }[] }> {
   try {
-    const { supabase, docs } = await projectPlanDocs(projectId);
-    if (docs.length === 0) return { error: 'No plan PDFs found. Upload the plans on the Documents tab (category Plans) as PDF files first.' };
-    const parts: PlanPart[] = [];
-    const notes: string[] = [];
-    let total = 0;
-    for (const d of docs) {
-      const { data: blob } = await supabase.storage.from('project-files').download(String(d.storage_key));
-      if (!blob) {
-        notes.push(`${d.file_name} (could not open)`);
-        continue;
-      }
-      let pages = 0;
-      try {
-        pages = (await PDFDocument.load(await blob.arrayBuffer(), { ignoreEncryption: true, updateMetadata: false })).getPageCount();
-      } catch {
-        notes.push(`${d.file_name} (not a readable PDF)`);
-        continue;
-      }
-      if (total + pages > MAX_TOTAL_PAGES) {
-        notes.push(`${d.file_name} (over the ${MAX_TOTAL_PAGES}-page limit for one read)`);
-        continue;
-      }
-      total += pages;
-      for (let from = 1; from <= pages; from += PART_PAGES) {
-        parts.push({ storageKey: String(d.storage_key), name: String(d.file_name), from, to: Math.min(from + PART_PAGES - 1, pages), pages });
-      }
+    const supabase = await createClient();
+    const { data: docs } = await supabase
+      .from('documents')
+      .select('file_name, storage_key, version_status, category')
+      .eq('project_id', projectId)
+      .in('category', ['plans', 'appliances_specs'])
+      .order('uploaded_at', { ascending: false });
+    const pdfs = (docs ?? []).filter((d) => d.version_status !== 'superseded' && String(d.storage_key).toLowerCase().endsWith('.pdf'));
+    if (pdfs.length === 0) return { error: 'No plan PDFs found. Upload the plans on the Documents tab (category Plans) as PDF files first.' };
+    const files: { name: string; url: string }[] = [];
+    for (const d of pdfs) {
+      const { data } = await supabase.storage.from('project-files').createSignedUrl(String(d.storage_key), 3600);
+      if (data?.signedUrl) files.push({ name: String(d.file_name), url: data.signedUrl });
     }
-    if (parts.length === 0) return { error: 'No readable plan pages were found.', notes };
-    return { parts, notes };
+    if (files.length === 0) return { error: 'The plan files could not be opened.' };
+    return { files };
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'Something went wrong while preparing the plans.' };
   }
 }
 
+// Reads one uploaded part (a few pages cut from the plans) and removes the temporary copy.
 export async function readPlanChunk(
   projectId: string,
-  part: PlanPart
-): Promise<{ error?: string; split?: boolean; skipped?: string; items?: PlanItem[] }> {
+  chunkPath: string,
+  fileName: string,
+  from: number,
+  to: number,
+  pages: number
+): Promise<{ error?: string; tooBig?: boolean; items?: PlanItem[] }> {
   try {
+    if (!chunkPath.startsWith(`${projectId}/plans/read-tmp/`) || chunkPath.includes('..')) return { error: 'Invalid part.' };
     const supabase = await createClient();
-    // The file must belong to this project.
-    const { data: doc } = await supabase.from('documents').select('file_name').eq('project_id', projectId).eq('storage_key', part.storageKey).maybeSingle();
-    if (!doc) return { error: 'That plan file is not on this project.' };
-    const { data: blob } = await supabase.storage.from('project-files').download(part.storageKey);
-    if (!blob) return { error: 'The plan file could not be opened.' };
-    const src = await PDFDocument.load(await blob.arrayBuffer(), { ignoreEncryption: true, updateMetadata: false });
-    const out = await PDFDocument.create();
-    const idx: number[] = [];
-    for (let p = part.from - 1; p < Math.min(part.to, src.getPageCount()); p++) idx.push(p);
-    const copied = await out.copyPages(src, idx);
-    copied.forEach((pg) => out.addPage(pg));
-    const bytes = await out.save();
-    if (bytes.byteLength > MAX_PLAN_BYTES) {
-      if (part.to > part.from) return { split: true };
-      return { skipped: `${part.name} page ${part.from} (too large to read)` };
-    }
+    const { data: blob } = await supabase.storage.from('project-files').download(chunkPath);
+    if (!blob) return { error: 'The uploaded part could not be opened.' };
+    const data = await blob.arrayBuffer();
+    if (data.byteLength > MAX_PLAN_BYTES) return { tooBig: true };
     const { data: project } = await supabase.from('projects').select('name, client_name').eq('id', projectId).maybeSingle();
     const { data: ms } = await supabase.from('project_milestones').select('name').eq('project_id', projectId).order('sort_order');
-    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     const items = await readPlansWithAi(
-      [{ name: part.name, data: ab }],
+      [{ name: fileName, data }],
       (ms ?? []).map((m: { name: string }) => m.name),
       String(project?.name ?? project?.client_name ?? 'this project'),
-      `This is pages ${part.from} to ${part.to} of ${part.pages} in the file "${part.name}".`
+      `This is pages ${from} to ${to} of ${pages} in the file "${fileName}".`
     );
+    await supabase.storage.from('project-files').remove([chunkPath]);
     return { items };
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'Something went wrong while reading these pages.' };

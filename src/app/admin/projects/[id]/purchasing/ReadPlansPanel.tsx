@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { addDraftItems, finishPlanRead, planReadPlan, readPlanChunk, type DraftItem, type PlanPart } from './actions';
+import { addDraftItems, finishPlanRead, planReadFiles, readPlanChunk, type DraftItem } from './actions';
+import { createClient } from '@/lib/supabase/client';
 import type { PlanItem } from '@/lib/plans-read';
 
 type Step = { id: string; name: string; date: string };
@@ -18,47 +19,122 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
   const [progress, setProgress] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Reads the plans in parts, three at a time, so big plan sets work. Each part is one short request.
+  // Cuts the plans into small page ranges in the browser, uploads each, and has the server read them three at a time.
   async function read() {
     setError('');
     setInfo('');
     setDrafts(null);
     setBusy(true);
+    const PART_PAGES = 8;
+    const MAX_BYTES = 24 * 1024 * 1024;
+    const MAX_TOTAL_PAGES = 400;
     try {
-      setProgress('Counting the pages…');
-      const plan = await planReadPlan(projectId);
-      if (plan.error || !plan.parts) {
-        setError(plan.error ?? 'Nothing was read.');
+      setProgress('Opening the plan files…');
+      const list = await planReadFiles(projectId);
+      if (list.error || !list.files) {
+        setError(list.error ?? 'Nothing was read.');
         return;
       }
-      const queue: PlanPart[] = [...plan.parts];
-      let total = queue.length;
-      let done = 0;
+      const { PDFDocument } = await import('pdf-lib');
+      const supabase = createClient();
       const found: PlanItem[] = [];
-      const notes: string[] = [...(plan.notes ?? [])];
-      const label = (p: PlanPart) => `${p.name} pages ${p.from}-${p.to}`;
+      const notes: string[] = [];
+      let queued = 0;
+      let done = 0;
+      let totalPages = 0;
+      let running = 0;
+      const waiting: (() => void)[] = [];
+      const jobs: Promise<void>[] = [];
+      const show = () => setProgress(`Read ${done} of ${queued} parts of the plans…`);
 
-      async function worker() {
-        for (;;) {
-          const part = queue.shift();
-          if (!part) return;
-          let result = await readPlanChunk(projectId, part);
-          for (let tries = 0; result.error && tries < 2; tries++) result = await readPlanChunk(projectId, part);
-          if (result.split) {
-            const mid = Math.floor((part.from + part.to) / 2);
-            queue.unshift({ ...part, from: mid + 1 }, { ...part, to: mid });
-            total += 1;
+      async function slot() {
+        if (running >= 3) await new Promise<void>((r) => waiting.push(r));
+        running += 1;
+      }
+      function release() {
+        running -= 1;
+        const next = waiting.shift();
+        if (next) next();
+      }
+
+      async function readPart(path: string, fileName: string, from: number, to: number, pages: number) {
+        let lastError = '';
+        for (let tries = 0; tries < 3; tries++) {
+          try {
+            const r = await readPlanChunk(projectId, path, fileName, from, to, pages);
+            if (r.items) {
+              found.push(...r.items);
+              return;
+            }
+            lastError = r.tooBig ? 'too large' : r.error ?? 'no answer';
+            if (r.tooBig) break;
+          } catch (e) {
+            lastError = e instanceof Error ? e.message : 'the request failed';
+          }
+        }
+        notes.push(`${fileName} pages ${from}-${to} (${lastError})`);
+      }
+
+      for (const file of list.files) {
+        setProgress(`Opening ${file.name}…`);
+        const res = await fetch(file.url);
+        if (!res.ok) {
+          notes.push(`${file.name} (could not download)`);
+          continue;
+        }
+        let src;
+        try {
+          src = await PDFDocument.load(await res.arrayBuffer(), { ignoreEncryption: true, updateMetadata: false });
+        } catch {
+          notes.push(`${file.name} (not a readable PDF)`);
+          continue;
+        }
+        const pages = src.getPageCount();
+        if (totalPages + pages > MAX_TOTAL_PAGES) {
+          notes.push(`${file.name} (over the ${MAX_TOTAL_PAGES}-page limit for one read)`);
+          continue;
+        }
+        totalPages += pages;
+
+        // Builds one part; a part over the size limit is cut in half until it fits.
+        const ranges: [number, number][] = [];
+        for (let f = 1; f <= pages; f += PART_PAGES) ranges.push([f, Math.min(f + PART_PAGES - 1, pages)]);
+        while (ranges.length > 0) {
+          const [from, to] = ranges.shift() as [number, number];
+          const out = await PDFDocument.create();
+          const idx: number[] = [];
+          for (let p = from - 1; p < to; p++) idx.push(p);
+          (await out.copyPages(src, idx)).forEach((pg) => out.addPage(pg));
+          const bytes = await out.save();
+          if (bytes.byteLength > MAX_BYTES) {
+            if (to > from) {
+              const mid = Math.floor((from + to) / 2);
+              ranges.unshift([from, mid], [mid + 1, to]);
+            } else {
+              notes.push(`${file.name} page ${from} (too large to read)`);
+            }
             continue;
           }
-          if (result.skipped) notes.push(result.skipped);
-          else if (result.error) notes.push(`${label(part)} (${result.error})`);
-          else if (result.items) found.push(...result.items);
-          done += 1;
-          setProgress(`Read ${done} of ${total} parts of the plans…`);
+          const path = `${projectId}/plans/read-tmp/${Date.now()}-${from}-${to}.pdf`;
+          setProgress(`Preparing pages ${from}-${to} of ${file.name}…`);
+          const up = await supabase.storage.from('project-files').upload(path, new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }));
+          if (up.error) {
+            notes.push(`${file.name} pages ${from}-${to} (${up.error.message})`);
+            continue;
+          }
+          queued += 1;
+          await slot();
+          show();
+          jobs.push(
+            readPart(path, file.name, from, to, pages).finally(() => {
+              done += 1;
+              release();
+              show();
+            })
+          );
         }
       }
-      setProgress(`Read 0 of ${total} parts of the plans…`);
-      await Promise.all([worker(), worker(), worker()]);
+      await Promise.all(jobs);
 
       if (found.length === 0) {
         setError(notes.length ? `Nothing could be read. ${notes.join('; ')}.` : 'No items were found in the plans.');
@@ -73,12 +149,12 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
       setDrafts(res.items);
       setPicked(new Set(res.items.filter((i) => i.milestoneId).map((i) => i.key)));
       setInfo(
-        `Read ${plan.parts.length} parts of the plans.` +
+        `Read ${queued} parts of the plans.` +
           (notes.length ? ` Not read: ${notes.join('; ')}. Read the plans again or upload those sheets separately.` : '') +
           (res.items.length === 0 ? ' Nothing new to add.' : '')
       );
-    } catch {
-      setError('Reading was interrupted. Click Read the plans to try again.');
+    } catch (e) {
+      setError(`Reading was interrupted${e instanceof Error && e.message ? `: ${e.message}` : ''}. Click Read the plans to try again.`);
     } finally {
       setBusy(false);
       setProgress('');
