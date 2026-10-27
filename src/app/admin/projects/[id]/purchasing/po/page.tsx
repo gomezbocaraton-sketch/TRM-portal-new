@@ -43,29 +43,24 @@ export default async function GeneratePoPage({ params, searchParams }: { params:
 
   const priced = items.filter((i) => Number(i.unit_price) > 0);
   let open = 0;
-  let hasProposal = false;
-  const diffNotes: { project: string; text: string }[] = [];
   for (const pid of projectIds) {
     const prop = proposal.filter((p) => p.project_id === pid);
     if (prop.length === 0) continue;
-    hasProposal = true;
     const res = checkAgainstProposal(priced.filter((i) => i.project_id === pid), prop, allItems.filter((i) => i.project_id === pid));
     open += res.rows.filter((r) => r.kind !== 'match' && !r.item.ack_note).length;
-    for (const r of res.rows.filter((x) => x.kind !== 'match' && !x.item.ack_note)) {
-      diffNotes.push({ project: projectName.get(pid) ?? '', text: `${r.item.name}: ${r.detail}` });
-    }
   }
 
   const total = priced.reduce((s, i) => s + Number(i.quantity) * Number(i.unit_price), 0);
   const approverName = ctx.approverEmail === 'vgomez@codeconsultationnyc.com' ? 'Vanessa Gomez Botero' : ctx.approverEmail;
   const missingPrice = items.filter((i) => !(Number(i.unit_price) > 0));
   // One order is made for each project and vendor. Each order is approved on its own total.
-  const orderMap = new Map<string, { vendor: string; project: string; count: number; total: number }>();
+  const orderMap = new Map<string, { vendor: string; project: string; count: number; total: number; ids: number[] }>();
   for (const i of priced) {
     const vendor = (i.vendor ?? '').trim() || 'Vendor to be chosen';
     const key = `${i.project_id}||${vendor}`;
-    const cur = orderMap.get(key) ?? { vendor, project: projectName.get(i.project_id) ?? '', count: 0, total: 0 };
+    const cur = orderMap.get(key) ?? { vendor, project: projectName.get(i.project_id) ?? '', count: 0, total: 0, ids: [] };
     cur.count += 1;
+    cur.ids.push(i.id);
     cur.total += Number(i.quantity) * Number(i.unit_price);
     orderMap.set(key, cur);
   }
@@ -115,37 +110,34 @@ export default async function GeneratePoPage({ params, searchParams }: { params:
         <p className="mb-3 text-xs text-ink-soft">
           One order for each vendor. Only an order over {money(ctx.threshold)} needs {approverName}&apos;s approval; the rest are approved automatically.
         </p>
-        <div className="space-y-2">
-          {orders.map((o) => (
-            <div key={`${o.project}-${o.vendor}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-4 py-3">
-              <span className="text-sm text-ink">
-                <span className="font-semibold text-navy">{o.vendor}</span> · {o.count} item{o.count === 1 ? '' : 's'}
-              </span>
-              <span className="flex items-center gap-3">
-                <span className="text-sm font-semibold text-navy">{money(o.total)}</span>
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${o.total > ctx.threshold ? 'bg-accent-tint text-accent-deep' : 'bg-success-tint text-success'}`}>
-                  {o.total > ctx.threshold ? `Needs ${approverName.split(' ')[0]}'s approval` : 'Approved automatically'}
-                </span>
-              </span>
-            </div>
-          ))}
+        <div className="space-y-4">
+          {orders.map((o) => {
+            const q = o.ids.map((x) => `ids=${x}`).join('&');
+            const src = `/admin/projects/${projectId}/purchasing/po/preview?${q}&vendor=${encodeURIComponent(o.vendor)}`;
+            return (
+              <div key={`${o.project}-${o.vendor}`} className="rounded-lg border border-line p-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm text-ink">
+                    <span className="font-semibold text-navy">{o.vendor}</span> · {o.count} item{o.count === 1 ? '' : 's'} · <b>{money(o.total)}</b>
+                  </span>
+                  <span className="flex items-center gap-3">
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${o.total > ctx.threshold ? 'bg-accent-tint text-accent-deep' : 'bg-success-tint text-success'}`}>
+                      {o.total > ctx.threshold ? `Needs ${approverName.split(' ')[0]}'s approval` : 'Approved automatically'}
+                    </span>
+                    <a href={src} target="_blank" rel="noreferrer" className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-navy hover:border-accent">Open PDF</a>
+                  </span>
+                </div>
+                <iframe src={src} title={`PO preview ${o.vendor}`} className="h-[480px] w-full rounded border border-line" />
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {!hasProposal && (
-        <div className="mb-4 rounded-card border border-line bg-white px-4 py-3 text-sm text-ink-soft">
-          No proposal lines are saved for this project, so nothing was compared. <Link className="text-accent underline" href={`/admin/projects/${projectId}/purchasing/check?${checkQuery}`}>Add the proposal lines</Link> to run the check.
-        </div>
-      )}
-
       {open > 0 && (
-        <div className="mb-4 rounded-card border border-red-300 bg-red-50 p-4 text-sm text-red-800">
-          <p className="mb-2 font-semibold">{open} difference{open === 1 ? '' : 's'} from the proposal</p>
-          <ul className="list-disc space-y-1 pl-5">
-            {diffNotes.map((d, k) => (<li key={k}>{d.text}</li>))}
-          </ul>
-          <Link className="mt-2 inline-block underline" href={`/admin/projects/${projectId}/purchasing/check?${checkQuery}`}>Review and fix them</Link>
-        </div>
+        <p className="mb-4 text-xs text-ink-soft">
+          {open} difference{open === 1 ? '' : 's'} from the proposal. <Link className="text-accent underline" href={`/admin/projects/${projectId}/purchasing/check?${checkQuery}`}>Review them (optional)</Link>
+        </p>
       )}
 
       {missingPrice.length > 0 && (
@@ -175,11 +167,7 @@ export default async function GeneratePoPage({ params, searchParams }: { params:
             pendingLabel="Creating…"
           >
             {priced.map((i) => (<input key={i.id} type="hidden" name="ids" value={i.id} />))}
-            {open > 0 && (
-              <label className="mb-1 flex items-center gap-2 text-sm text-ink">
-                <input type="checkbox" name="reviewed" /> I reviewed the differences
-              </label>
-            )}
+            <input type="hidden" name="reviewed" value="on" />
           </FormWithFeedback>
         </div>
       )}
