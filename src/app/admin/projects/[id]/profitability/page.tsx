@@ -26,6 +26,34 @@ export default async function ProfitabilityPage({ params }: { params: Promise<{ 
     supabase.from('payments').select('amount').eq('project_id', projectId),
   ]);
 
+  // Contractors: approved quotes (estimates and change orders) against what has been paid.
+  const [{ data: subRows }, { data: quoteRows }, { data: subPayRows }, { data: coRows }] = await Promise.all([
+    supabase.from('subcontractors').select('id, name, trade').eq('project_id', projectId).order('name'),
+    supabase.from('subcontractor_quotes').select('id, subcontractor_id, description, amount, status').eq('project_id', projectId).order('created_at'),
+    supabase.from('subcontractor_payments').select('quote_id, amount, payment_date').eq('project_id', projectId),
+    supabase.from('change_orders').select('id, title, amount, status').eq('project_id', projectId).order('created_at'),
+  ]);
+  const paidByQuote = new Map<string, number>();
+  for (const pay of (subPayRows ?? []) as Row[]) paidByQuote.set(String(pay.quote_id), (paidByQuote.get(String(pay.quote_id)) ?? 0) + Number(pay.amount));
+  const contractors = ((subRows ?? []) as Row[]).map((sub) => {
+    const mine = ((quoteRows ?? []) as Row[]).filter((q) => String(q.subcontractor_id) === String(sub.id));
+    const approved = mine.filter((q) => q.status === 'approved').map((q) => ({
+      id: String(q.id),
+      description: String(q.description || 'Quote'),
+      amount: Number(q.amount ?? 0),
+      paid: paidByQuote.get(String(q.id)) ?? 0,
+    }));
+    const pending = mine.filter((q) => q.status === 'pending').reduce((t, q) => t + Number(q.amount ?? 0), 0);
+    const total = approved.reduce((t, q) => t + q.amount, 0);
+    const paid = approved.reduce((t, q) => t + q.paid, 0);
+    return { id: String(sub.id), name: String(sub.name), trade: String(sub.trade ?? ''), approved, pending, total, paid, left: total - paid };
+  }).filter((c) => c.approved.length > 0 || c.pending > 0);
+  const subTotal = contractors.reduce((t, c) => t + c.total, 0);
+  const subPaid = contractors.reduce((t, c) => t + c.paid, 0);
+  const subLeft = subTotal - subPaid;
+  const signedCos = ((coRows ?? []) as Row[]).filter((c) => c.status === 'signed');
+  const pendingCos = ((coRows ?? []) as Row[]).filter((c) => c.status === 'pending');
+
   // Committed cost: open purchase orders not yet invoiced. Tolerates the tables not existing yet.
   let approvedCommitted = 0;
   let waitingCommitted = 0;
@@ -76,7 +104,9 @@ export default async function ProfitabilityPage({ params }: { params: Promise<{ 
   const contractValue = Number(adjustedValue ?? 0);
   // Same calculation as the Financials tab: sum of recorded payments
   const received = ((payments ?? []) as Row[]).reduce((sum, p) => sum + Number(p.amount), 0);
-  const totalCosts = costs.reduce((s, c) => s + c.amount, 0);
+  // Contractor payments count as costs automatically (they are recorded on the Subcontractors tab).
+  const recordedCosts = costs.reduce((s, c) => s + c.amount, 0);
+  const totalCosts = recordedCosts + subPaid;
   // Profitability is based on money actually received, not money billed
   const grossProfit = received - totalCosts;
   const marginPct = received > 0 ? Math.round((grossProfit / received) * 100) : 0;
@@ -118,11 +148,68 @@ export default async function ProfitabilityPage({ params }: { params: Promise<{ 
           <p className="mt-1 text-2xl font-medium text-amber-800">{money(waitingCommitted)}</p>
         </div>
         <div className="rounded-card border border-line bg-white p-5">
-          <p className="text-xs font-medium text-ink-soft">Forecast cost (costs to date + committed)</p>
-          <p className="mt-1 text-2xl font-medium text-navy">{money(totalCosts + approvedCommitted)}</p>
-          <p className="mt-1 text-xs text-ink-soft">Forecast profit on money received: {money(received - totalCosts - approvedCommitted)}</p>
+          <p className="text-xs font-medium text-ink-soft">Forecast cost (costs to date + committed + contractors still owed)</p>
+          <p className="mt-1 text-2xl font-medium text-navy">{money(totalCosts + approvedCommitted + subLeft)}</p>
+          <p className="mt-1 text-xs text-ink-soft">Forecast profit on money received: {money(received - totalCosts - approvedCommitted - subLeft)}</p>
         </div>
       </div>
+
+      <div className="mb-6 rounded-card border border-line bg-white p-4 sm:p-6">
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-navy">Contractors: running balance</p>
+          <p className="text-xs text-ink-soft">Approved quotes and change orders from the Subcontractors tab, against payments made</p>
+        </div>
+        {contractors.length === 0 ? (
+          <p className="mt-2 text-sm text-ink-soft">No contractor quotes yet. Add them on the Subcontractors tab.</p>
+        ) : (
+          <>
+            <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-lg bg-paper p-3"><p className="text-xs text-ink-soft">Approved</p><p className="text-lg font-semibold text-navy">{money(subTotal)}</p></div>
+              <div className="rounded-lg bg-paper p-3"><p className="text-xs text-ink-soft">Paid</p><p className="text-lg font-semibold text-success">{money(subPaid)}</p></div>
+              <div className="rounded-lg bg-paper p-3"><p className="text-xs text-ink-soft">Still owed</p><p className="text-lg font-semibold text-accent-deep">{money(subLeft)}</p></div>
+            </div>
+            <div className="mt-4 space-y-3">
+              {contractors.map((c) => (
+                <div key={c.id} className="rounded-lg border border-line">
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                    <span className="text-sm font-semibold text-navy">{c.name}{c.trade ? <span className="font-normal text-ink-soft"> · {c.trade}</span> : null}</span>
+                    <span className="text-sm text-ink">
+                      {money(c.total)} approved · <span className="text-success">{money(c.paid)} paid</span> ·{' '}
+                      <b className={c.left > 0 ? 'text-accent-deep' : 'text-success'}>{c.left > 0 ? `${money(c.left)} left` : 'paid in full'}</b>
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-paper">
+                    <div className="h-full bg-success" style={{ width: `${c.total > 0 ? Math.min(100, (c.paid / c.total) * 100) : 0}%` }} />
+                  </div>
+                  <div className="divide-y divide-line px-4 text-xs">
+                    {c.approved.map((q) => (
+                      <div key={q.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                        <span className="text-ink">{q.description}</span>
+                        <span className="text-ink-soft">{money(q.amount)} · paid {money(q.paid)} · <b className="text-navy">{money(q.amount - q.paid)} left</b></span>
+                      </div>
+                    ))}
+                    {c.pending > 0 && <p className="py-2 text-ink-soft">{money(c.pending)} in quotes waiting for approval (not counted above)</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-ink-soft">Contractor payments are included in Costs to date automatically. Do not also record them under Record cost.</p>
+          </>
+        )}
+      </div>
+
+      {(signedCos.length > 0 || pendingCos.length > 0) && (
+        <div className="mb-6 rounded-card border border-line bg-white p-4 sm:p-6">
+          <p className="mb-2 text-sm font-semibold text-navy">Client change orders</p>
+          <div className="divide-y divide-line text-sm">
+            {signedCos.map((c) => (<div key={String(c.id)} className="flex justify-between py-2"><span>{String(c.title)} <span className="text-xs text-success">approved</span></span><b className="text-navy">{money(Number(c.amount ?? 0))}</b></div>))}
+            {pendingCos.map((c) => (<div key={String(c.id)} className="flex justify-between py-2"><span>{String(c.title)} <span className="text-xs text-ink-soft">waiting for the client</span></span><span className="text-ink-soft">{money(Number(c.amount ?? 0))}</span></div>))}
+          </div>
+          <p className="mt-3 text-sm text-ink">
+            Contract value with approved change orders: <b>{money(contractValue)}</b> · received <b className="text-success">{money(received)}</b> · <b className="text-accent-deep">{money(Math.max(0, contractValue - received))} left to collect</b>
+          </p>
+        </div>
+      )}
 
       <div className="mb-6 rounded-card border border-line bg-white p-5">
         <p className="text-xs font-medium text-ink-soft">Margin on money received</p>
