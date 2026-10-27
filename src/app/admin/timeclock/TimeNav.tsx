@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation';
 
 const TABS = [
   { href: '/admin/timeclock', label: 'Time sheet', match: (p: string) => p === '/admin/timeclock' },
+  { href: '/admin/timeclock/card', label: 'Time cards', match: (p: string) => p.startsWith('/admin/timeclock/card') },
+  { href: '/admin/timeclock/reports', label: 'Reports', match: (p: string) => p.startsWith('/admin/timeclock/reports') },
   { href: '/admin/timeclock/locations', label: 'Locations', match: (p: string) => p.startsWith('/admin/timeclock/locations') },
   { href: '/admin/timeclock/employees', label: 'Employees', match: (p: string) => p.startsWith('/admin/timeclock/employees') },
 ];

@@ -136,7 +136,7 @@ export default async function TimeSheetPage({ searchParams }: { searchParams: Pr
                 return (
                   <tr key={String(r.id)} className={`border-b border-line align-top last:border-0 ${needsReview ? 'bg-accent-tint' : ''}`}>
                     <td className="px-3 py-2">{fmtDay(String(r.clock_in))}</td>
-                    <td className="px-3 py-2 font-medium text-navy">{String(emp?.full_name ?? '')}</td>
+                    <td className="px-3 py-2 font-medium text-navy"><Link href={`/admin/timeclock/card?emp=${String(r.employee_id)}&date=${new Date(String(r.clock_in)).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })}`} className="underline decoration-dotted">{String(emp?.full_name ?? '')}</Link></td>
                     <td className="px-3 py-2">
                       {String(loc?.name ?? '')}
                       {proj && <div className="text-xs text-ink-soft">{proj}</div>}

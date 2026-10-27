@@ -168,30 +168,51 @@ export default async function ProfitabilityPage({ params }: { params: Promise<{ 
               <div className="rounded-lg bg-paper p-3"><p className="text-xs text-ink-soft">Paid</p><p className="text-lg font-semibold text-success">{money(subPaid)}</p></div>
               <div className="rounded-lg bg-paper p-3"><p className="text-xs text-ink-soft">Still owed</p><p className="text-lg font-semibold text-accent-deep">{money(subLeft)}</p></div>
             </div>
-            <div className="mt-4 space-y-3">
-              {contractors.map((c) => (
-                <div key={c.id} className="rounded-lg border border-line">
-                  <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-                    <span className="text-sm font-semibold text-navy">{c.name}{c.trade ? <span className="font-normal text-ink-soft"> · {c.trade}</span> : null}</span>
-                    <span className="text-sm text-ink">
-                      {money(c.total)} approved · <span className="text-success">{money(c.paid)} paid</span> ·{' '}
-                      <b className={c.left > 0 ? 'text-accent-deep' : 'text-success'}>{c.left > 0 ? `${money(c.left)} left` : 'paid in full'}</b>
-                    </span>
-                  </div>
-                  <div className="h-1.5 bg-paper">
-                    <div className="h-full bg-success" style={{ width: `${c.total > 0 ? Math.min(100, (c.paid / c.total) * 100) : 0}%` }} />
-                  </div>
-                  <div className="divide-y divide-line px-4 text-xs">
-                    {c.approved.map((q) => (
-                      <div key={q.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                        <span className="text-ink">{q.description}</span>
-                        <span className="text-ink-soft">{money(q.amount)} · paid {money(q.paid)} · <b className="text-navy">{money(q.amount - q.paid)} left</b></span>
-                      </div>
-                    ))}
-                    {c.pending > 0 && <p className="py-2 text-ink-soft">{money(c.pending)} in quotes waiting for approval (not counted above)</p>}
-                  </div>
-                </div>
-              ))}
+            <div className="mt-4 space-y-2">
+              {[...new Set(contractors.map((c) => c.trade || 'Other'))].sort().map((trade) => {
+                const list = contractors.filter((c) => (c.trade || 'Other') === trade);
+                const tTotal = list.reduce((t, c) => t + c.total, 0);
+                const tPaid = list.reduce((t, c) => t + c.paid, 0);
+                return (
+                  <details key={trade} className="group rounded-lg border border-line">
+                    <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
+                      <span className="text-sm font-semibold text-navy">
+                        <span className="mr-2 inline-block text-ink-soft transition-transform group-open:rotate-90">&#9656;</span>
+                        {trade} <span className="text-xs font-normal text-ink-soft">{list.length} contractor{list.length === 1 ? '' : 's'}</span>
+                      </span>
+                      <span className="text-sm text-ink">
+                        {money(tTotal)} approved · <span className="text-success">{money(tPaid)} paid</span> ·{' '}
+                        <b className={tTotal - tPaid > 0 ? 'text-accent-deep' : 'text-success'}>{tTotal - tPaid > 0 ? `${money(tTotal - tPaid)} left` : 'paid in full'}</b>
+                      </span>
+                    </summary>
+                    <div className="space-y-3 border-t border-line p-3">
+                      {list.map((c) => (
+                        <div key={c.id} className="rounded-lg border border-line">
+                          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                            <span className="text-sm font-semibold text-navy">{c.name}</span>
+                            <span className="text-sm text-ink">
+                              {money(c.total)} approved · <span className="text-success">{money(c.paid)} paid</span> ·{' '}
+                              <b className={c.left > 0 ? 'text-accent-deep' : 'text-success'}>{c.left > 0 ? `${money(c.left)} left` : 'paid in full'}</b>
+                            </span>
+                          </div>
+                          <div className="h-1.5 bg-paper">
+                            <div className="h-full bg-success" style={{ width: `${c.total > 0 ? Math.min(100, (c.paid / c.total) * 100) : 0}%` }} />
+                          </div>
+                          <div className="divide-y divide-line px-4 text-xs">
+                            {c.approved.map((q) => (
+                              <div key={q.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                                <span className="text-ink">{q.description}</span>
+                                <span className="text-ink-soft">{money(q.amount)} · paid {money(q.paid)} · <b className="text-navy">{money(q.amount - q.paid)} left</b></span>
+                              </div>
+                            ))}
+                            {c.pending > 0 && <p className="py-2 text-ink-soft">{money(c.pending)} in quotes waiting for approval (not counted above)</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                );
+              })}
             </div>
             <p className="mt-3 text-xs text-ink-soft">Contractor payments are included in Costs to date automatically. Do not also record them under Record cost.</p>
           </>

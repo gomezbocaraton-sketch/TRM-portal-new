@@ -71,6 +71,12 @@ export function CostsLedger({
     if (s && !(c.vendor + ' ' + (c.description ?? '')).toLowerCase().includes(s)) return false;
     return true;
   });
+  // Grouped by type of work so the list stays short; each group opens on click.
+  const grouped = useMemo(() => {
+    const m = new Map<string, CostRow[]>();
+    for (const c of filtered) m.set(c.category || 'Other', [...(m.get(c.category || 'Other') ?? []), c]);
+    return [...m.entries()].sort((a, b) => b[1].reduce((t, x) => t + x.amount, 0) - a[1].reduce((t, x) => t + x.amount, 0));
+  }, [filtered]);
   const shownTotal = filtered.reduce((s, c) => s + c.amount, 0);
   const missing = costs.filter((c) => !c.file_name).length;
   const anyFilter = q || fCat || fVendor || fMs;
@@ -152,8 +158,18 @@ export function CostsLedger({
         </div>
 
         {filtered.length === 0 && <p className="py-6 text-center text-sm text-ink-soft">No costs match.</p>}
-        <div className="divide-y divide-line">
-          {filtered.map((c) => (
+        <div className="space-y-2">
+          {grouped.map(([cat, list]) => (
+            <details key={cat} open={Boolean(anyFilter)} className="group rounded-lg border border-line">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
+                <span className="text-sm font-semibold text-navy">
+                  <span className="mr-2 inline-block text-ink-soft transition-transform group-open:rotate-90">&#9656;</span>
+                  {cat} <span className="text-xs font-normal text-ink-soft">{list.length} {list.length === 1 ? 'cost' : 'costs'}</span>
+                </span>
+                <span className="text-sm font-semibold text-accent-deep">{money(list.reduce((t, x) => t + x.amount, 0))}</span>
+              </summary>
+              <div className="divide-y divide-line border-t border-line px-4">
+          {list.map((c) => (
             <div key={c.id} className="py-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -264,6 +280,9 @@ export function CostsLedger({
                 </div>
               )}
             </div>
+          ))}
+              </div>
+            </details>
           ))}
         </div>
         <div className="mt-3 flex justify-between border-t border-line pt-3 text-xs text-ink-soft">

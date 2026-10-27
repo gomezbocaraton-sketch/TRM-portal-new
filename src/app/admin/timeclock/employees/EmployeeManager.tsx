@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { saveEmployee, setEmployeeActive } from '../actions';
 
 export type EmployeeRow = {
@@ -246,6 +247,12 @@ export function EmployeeManager({ employees }: { employees: EmployeeRow[] }) {
                 <button className="text-accent underline" onClick={() => setEditId(editId === e.id ? null : e.id)}>
                   {editId === e.id ? 'Close' : 'Edit / new password'}
                 </button>
+                <Link href={`/admin/timeclock/employees/${e.id}/pay`} className="text-accent underline">
+                  Pay &amp; overtime
+                </Link>
+                <Link href={`/admin/timeclock/card?emp=${e.id}`} className="text-accent underline">
+                  Time card
+                </Link>
                 <button disabled={pending} className="text-ink-soft underline" onClick={() => toggle(e)}>
                   {e.active ? 'Deactivate' : 'Reactivate'}
                 </button>

@@ -178,3 +178,40 @@ export async function reopenPunch(punchId: number): Promise<Result> {
   refresh();
   return { ok: true };
 }
+
+export async function savePayRule(input: {
+  employeeId: number;
+  effectiveDate: string;
+  payType: string;
+  payRate: string;
+  rateUnit: string;
+  exemption: string;
+  overtimeRule: string;
+  mealBreakPolicy: string;
+}): Promise<Result> {
+  const supabase = await createClient();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.effectiveDate)) return { ok: false, error: 'Choose the date this starts.' };
+  const rate = input.payRate.trim() === '' ? null : parseFloat(input.payRate.replace(/[$,]/g, ''));
+  if (rate != null && !(rate >= 0)) return { ok: false, error: 'Enter the pay rate as a number.' };
+  const { error } = await supabase.from('time_pay_rules').insert({
+    employee_id: input.employeeId,
+    effective_date: input.effectiveDate,
+    pay_type: input.payType,
+    pay_rate: rate,
+    rate_unit: input.rateUnit === 'day' ? 'day' : 'hour',
+    exemption: input.exemption,
+    overtime_rule: input.overtimeRule,
+    meal_break_policy: input.mealBreakPolicy,
+  });
+  if (error) return { ok: false, error: error.message.includes('time_pay_rules') ? 'Run the time clock pay SQL (timeclock_v3) in Supabase first.' : error.message };
+  refresh();
+  return { ok: true };
+}
+
+export async function deletePayRule(id: number): Promise<Result> {
+  const supabase = await createClient();
+  const { error } = await supabase.from('time_pay_rules').delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  refresh();
+  return { ok: true };
+}
