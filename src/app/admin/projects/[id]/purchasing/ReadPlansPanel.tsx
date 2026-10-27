@@ -28,13 +28,16 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
     const PART_PAGES = 8;
     const MAX_BYTES = 24 * 1024 * 1024;
     const MAX_TOTAL_PAGES = 400;
+    let step = 'starting';
     try {
+      step = 'listing the plan files (server)';
       setProgress('Opening the plan files…');
       const list = await planReadFiles(projectId);
       if (list.error || !list.files) {
         setError(list.error ?? 'Nothing was read.');
         return;
       }
+      step = 'loading the PDF tool (browser)';
       const { PDFDocument } = await import('pdf-lib');
       const supabase = createClient();
       const found: PlanItem[] = [];
@@ -77,11 +80,13 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
 
       for (const file of list.files) {
         setProgress(`Opening ${file.name}…`);
+        step = `downloading ${file.name} (browser)`;
         const res = await fetch(file.url);
         if (!res.ok) {
           notes.push(`${file.name} (could not download)`);
           continue;
         }
+        step = `opening ${file.name} (browser)`;
         let src;
         try {
           src = await PDFDocument.load(await res.arrayBuffer(), { ignoreEncryption: true, updateMetadata: false });
@@ -101,6 +106,7 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
         for (let f = 1; f <= pages; f += PART_PAGES) ranges.push([f, Math.min(f + PART_PAGES - 1, pages)]);
         while (ranges.length > 0) {
           const [from, to] = ranges.shift() as [number, number];
+          step = `cutting pages ${from}-${to} (browser)`;
           const out = await PDFDocument.create();
           const idx: number[] = [];
           for (let p = from - 1; p < to; p++) idx.push(p);
@@ -117,6 +123,7 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
           }
           const path = `${projectId}/plans/read-tmp/${Date.now()}-${from}-${to}.pdf`;
           setProgress(`Preparing pages ${from}-${to} of ${file.name}…`);
+          step = `uploading pages ${from}-${to} (browser)`;
           const up = await supabase.storage.from('project-files').upload(path, new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }));
           if (up.error) {
             notes.push(`${file.name} pages ${from}-${to} (${up.error.message})`);
@@ -134,6 +141,7 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
           );
         }
       }
+      step = 'waiting for the page reads (server)';
       await Promise.all(jobs);
 
       if (found.length === 0) {
@@ -141,6 +149,7 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
         return;
       }
       setProgress('Combining the list…');
+      step = 'combining the list (server)';
       const res = await finishPlanRead(projectId, found);
       if (res.error || !res.items) {
         setError(res.error ?? 'Nothing was read.');
@@ -154,7 +163,7 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
           (res.items.length === 0 ? ' Nothing new to add.' : '')
       );
     } catch (e) {
-      setError(`Reading was interrupted${e instanceof Error && e.message ? `: ${e.message}` : ''}. Click Read the plans to try again.`);
+      setError(`Reading was interrupted while ${step}${e instanceof Error && e.message ? `: ${e.message}` : ''}. Click Read the plans to try again.`);
     } finally {
       setBusy(false);
       setProgress('');
