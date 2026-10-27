@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { addDraftItems, readProjectPlans, type DraftItem } from './actions';
+import { addDraftItems, finishPlanRead, planReadPlan, readPlanChunk, type DraftItem, type PlanPart } from './actions';
+import type { PlanItem } from '@/lib/plans-read';
 
 type Step = { id: string; name: string; date: string };
 
@@ -14,11 +15,57 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
 
-  function read() {
+  const [progress, setProgress] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  // Reads the plans in parts, three at a time, so big plan sets work. Each part is one short request.
+  async function read() {
     setError('');
     setInfo('');
-    start(async () => {
-      const res = await readProjectPlans(projectId);
+    setDrafts(null);
+    setBusy(true);
+    try {
+      setProgress('Counting the pages…');
+      const plan = await planReadPlan(projectId);
+      if (plan.error || !plan.parts) {
+        setError(plan.error ?? 'Nothing was read.');
+        return;
+      }
+      const queue: PlanPart[] = [...plan.parts];
+      let total = queue.length;
+      let done = 0;
+      const found: PlanItem[] = [];
+      const notes: string[] = [...(plan.notes ?? [])];
+      const label = (p: PlanPart) => `${p.name} pages ${p.from}-${p.to}`;
+
+      async function worker() {
+        for (;;) {
+          const part = queue.shift();
+          if (!part) return;
+          let result = await readPlanChunk(projectId, part);
+          for (let tries = 0; result.error && tries < 2; tries++) result = await readPlanChunk(projectId, part);
+          if (result.split) {
+            const mid = Math.floor((part.from + part.to) / 2);
+            queue.unshift({ ...part, from: mid + 1 }, { ...part, to: mid });
+            total += 1;
+            continue;
+          }
+          if (result.skipped) notes.push(result.skipped);
+          else if (result.error) notes.push(`${label(part)} (${result.error})`);
+          else if (result.items) found.push(...result.items);
+          done += 1;
+          setProgress(`Read ${done} of ${total} parts of the plans…`);
+        }
+      }
+      setProgress(`Read 0 of ${total} parts of the plans…`);
+      await Promise.all([worker(), worker(), worker()]);
+
+      if (found.length === 0) {
+        setError(notes.length ? `Nothing could be read. ${notes.join('; ')}.` : 'No items were found in the plans.');
+        return;
+      }
+      setProgress('Combining the list…');
+      const res = await finishPlanRead(projectId, found);
       if (res.error || !res.items) {
         setError(res.error ?? 'Nothing was read.');
         return;
@@ -26,11 +73,16 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
       setDrafts(res.items);
       setPicked(new Set(res.items.filter((i) => i.milestoneId).map((i) => i.key)));
       setInfo(
-        `Read ${res.filesRead} plan file${res.filesRead === 1 ? '' : 's'}.` +
-          (res.skipped && res.skipped.length ? ` Skipped: ${res.skipped.join(', ')}.` : '') +
+        `Read ${plan.parts.length} parts of the plans.` +
+          (notes.length ? ` Not read: ${notes.join('; ')}. Read the plans again or upload those sheets separately.` : '') +
           (res.items.length === 0 ? ' Nothing new to add.' : '')
       );
-    });
+    } catch {
+      setError('Reading was interrupted. Click Read the plans to try again.');
+    } finally {
+      setBusy(false);
+      setProgress('');
+    }
   }
 
   function change(key: number, patch: Partial<DraftItem>) {
@@ -64,12 +116,13 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
             The system reads the plan PDFs on the Documents tab ({planFiles} found) and drafts the list of items to buy. You review it before anything is added.
           </p>
         </div>
-        <button onClick={read} disabled={pending || !configured || planFiles === 0} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-          {pending && !drafts ? 'Reading the plans… this can take a minute' : 'Read the plans'}
+        <button onClick={read} disabled={busy || pending || !configured || planFiles === 0} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          {busy ? 'Reading…' : 'Read the plans'}
         </button>
       </div>
       {!configured && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Not connected yet. It needs ANTHROPIC_API_KEY added in Vercel.</p>}
       {configured && planFiles === 0 && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">No plan PDFs found. Upload them on the Documents tab with the category Plans.</p>}
+      {busy && progress && <p className="mt-3 text-sm font-semibold text-navy">{progress} Keep this page open. Big plan sets take a few minutes.</p>}
       {error && <p className="mt-3 text-sm font-semibold text-red-600">{error}</p>}
       {info && <p className="mt-3 text-xs text-ink-soft">{info}</p>}
 
