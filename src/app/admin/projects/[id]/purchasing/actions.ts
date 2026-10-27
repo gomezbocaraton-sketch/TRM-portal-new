@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createPurchase } from '@/app/admin/purchasing/actions';
 import { searchPrices } from '@/lib/price-search';
 import { extractProposalLines } from '@/lib/proposal-extract';
-import { MAX_PLAN_BYTES, mergePlanItems, readPlans as readPlansWithAi, type PlanItem } from '@/lib/plans-read';
+import { MAX_PLAN_BYTES, combinePlanItems, readPlans as readPlansWithAi, type PlanItem } from '@/lib/plans-read';
 import { checkAgainstProposal, summarize, type ProposalItem } from '@/lib/proposal';
 import type { BuyItem } from '@/lib/buyplan';
 
@@ -338,7 +338,7 @@ export async function finishPlanRead(projectId: string, found: PlanItem[]): Prom
     const supabase = await createClient();
     const { data: ms } = await supabase.from('project_milestones').select('id, name').eq('project_id', projectId).order('sort_order');
     const milestones = (ms ?? []) as { id: string | number; name: string }[];
-    const merged = await mergePlanItems(found, milestones.map((m) => m.name));
+    const merged = combinePlanItems(found);
     const { data: existing } = await supabase.from('buy_items').select('name').eq('project_id', projectId);
     const have = new Set((existing ?? []).map((e: { name: string }) => e.name.trim().toLowerCase()));
     const fresh = merged.filter((i) => !have.has(i.name.trim().toLowerCase()));

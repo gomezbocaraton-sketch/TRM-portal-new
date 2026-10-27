@@ -81,53 +81,22 @@ function clean(parsed: Partial<PlanItem>[]): PlanItem[] {
     }));
 }
 
-// Fallback when the AI merge is unavailable: same name and unit counts once, keeping the larger quantity.
-function simpleMerge(items: PlanItem[]): PlanItem[] {
+// Items read from different parts of a large plan set often repeat (a door shows on the plan and in the schedule).
+// The same name and unit counts once, keeping the larger quantity so nothing is under-ordered; if the parts disagree
+// the note asks for the quantity to be confirmed. This is instant, so it never runs into a server time limit.
+export function combinePlanItems(items: PlanItem[]): PlanItem[] {
   const seen = new Map<string, PlanItem>();
   for (const i of items) {
-    const k = `${i.name.trim().toLowerCase()}|${(i.unit ?? '').toLowerCase()}`;
+    const k = `${i.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()}|${(i.unit ?? '').toLowerCase()}`;
     const have = seen.get(k);
-    if (!have || i.quantity > have.quantity) seen.set(k, have ? { ...i, milestone: i.milestone ?? have.milestone } : i);
+    if (!have) {
+      seen.set(k, i);
+      continue;
+    }
+    const bigger = i.quantity > have.quantity ? i : have;
+    const disagree = i.quantity !== have.quantity;
+    const note = [bigger.note ?? have.note, disagree ? 'confirm quantity (read differently on different sheets)' : null].filter(Boolean).join('; ');
+    seen.set(k, { ...bigger, milestone: bigger.milestone ?? have.milestone ?? i.milestone, note: note ? note.slice(0, 200) : null });
   }
   return [...seen.values()];
-}
-
-// Items read from different parts of a large plan set often repeat (a door shows on the plan and in the schedule).
-// This pass combines them into one list. A failure falls back to a simple merge, so the user still gets a list.
-export async function mergePlanItems(items: PlanItem[], milestoneNames: string[]): Promise<PlanItem[]> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key || items.length < 2) return simpleMerge(items);
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5-5',
-        max_tokens: 16000,
-        messages: [
-          {
-            role: 'user',
-            content:
-              'Below is a list of materials read from different page ranges of the same construction plan set, so the same item can appear more than once. ' +
-              'Combine it into one clean list. Rules: the same item reported from a schedule and from a drawing is ONE item, so keep the schedule quantity and do not add them; ' +
-              'add quantities only when the entries are clearly different rooms or locations; keep distinct products separate; keep the notes, adding "confirm quantity" if two entries disagree. ' +
-              `Schedule steps allowed for milestone: ${milestoneNames.map((n) => `"${n}"`).join(', ') || '(none)'}; keep each item's milestone as given. ` +
-              'Reply with ONLY a JSON array in the same format: {"name","quantity","unit","milestone","lead_days","note"}.\n\n' +
-              JSON.stringify(items),
-          },
-        ],
-      }),
-      cache: 'no-store',
-    });
-    if (!res.ok) return simpleMerge(items);
-    const json = (await res.json()) as { content?: { type: string; text?: string }[] };
-    const text = (json.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
-    const a = text.indexOf('[');
-    const b = text.lastIndexOf(']');
-    if (a < 0 || b < a) return simpleMerge(items);
-    const merged = clean(JSON.parse(text.slice(a, b + 1)) as Partial<PlanItem>[]);
-    return merged.length > 0 ? merged : simpleMerge(items);
-  } catch {
-    return simpleMerge(items);
-  }
 }
