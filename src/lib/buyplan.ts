@@ -62,6 +62,7 @@ export type BuyItem = {
   proposal_item_id: number | null;
   ack_note: string | null;
   client_buys?: boolean | null;
+  purchased_at?: string | null;
 };
 
 // "Needed on site" comes from the linked schedule milestone (its planned start) unless a date was typed in.

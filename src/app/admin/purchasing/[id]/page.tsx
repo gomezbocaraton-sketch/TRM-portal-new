@@ -87,7 +87,15 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             </p>
             <p className="text-sm text-ink-soft">{projectName}</p>
           </div>
-          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badge.cls}`}>{badge.text}</span>
+          <span className="flex flex-wrap items-center gap-3">
+            <a href={`/admin/purchasing/${p.id}/po-pdf`} target="_blank" rel="noreferrer" className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-navy hover:border-accent">
+              View PDF
+            </a>
+            <a href={`/admin/purchasing/${p.id}/po-pdf?download=1`} className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-navy hover:border-accent">
+              Download PDF
+            </a>
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badge.cls}`}>{badge.text}</span>
+          </span>
         </div>
 
         <div className="mb-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">

@@ -132,6 +132,24 @@ export async function setClientBuying(projectId: string, itemIds: number[], on: 
   });
 }
 
+// Marks an ordered item as purchased (with the time), or undoes it. The order must be approved first.
+export async function markItemPurchased(projectId: string, itemId: number, on: boolean): Promise<Outcome> {
+  return guard(async () => {
+    const supabase = await createClient();
+    const { data: item } = await supabase.from('buy_items').select('id, name, purchase_id, status').eq('id', itemId).eq('project_id', projectId).maybeSingle();
+    if (!item || item.status !== 'ordered') throw new Error('That item is not on an order yet.');
+    const { data: po } = await supabase.from('purchases').select('status').eq('id', item.purchase_id).maybeSingle();
+    if (on && po?.status !== 'approved') throw new Error('The order must be approved before the item can be marked purchased.');
+    const { error } = await supabase.from('buy_items').update({ purchased_at: on ? new Date().toISOString() : null }).eq('id', itemId);
+    if (error) {
+      if (error.message.includes('purchased_at')) throw new Error('The database is not ready for this yet. Run the item purchased SQL in Supabase first.');
+      throw new Error(error.message);
+    }
+    await supabase.from('purchase_events').insert({ purchase_id: item.purchase_id, event: on ? 'Item marked purchased' : 'Item purchase undone', who: 'Staff', note: String(item.name) });
+    refresh();
+  });
+}
+
 export async function addManualQuote(itemId: number, formData: FormData): Promise<Outcome> {
   return guard(async () => {
     const store = String(formData.get('store') ?? '').trim();

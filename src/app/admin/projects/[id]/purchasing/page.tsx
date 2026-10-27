@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
-import { getPurchasingContext, money, poNumber, type Purchase } from '@/lib/purchasing';
+import { formatWhen, getPurchasingContext, money, poNumber, type Purchase } from '@/lib/purchasing';
 import {
   dueLabel,
   neededOnSite,
@@ -22,6 +22,7 @@ import { ReadPlansPanel } from './ReadPlansPanel';
 import { FindAllPrices } from './FindAllPrices';
 import { TradeSelect } from './TradeSelect';
 import { ClientBuyButton } from './ClientBuyButton';
+import { MarkPurchasedButton } from './MarkPurchasedButton';
 import { QuickDecision } from '@/app/admin/purchasing/QuickDecision';
 import { priceSearchConfigured } from '@/lib/price-search';
 
@@ -45,7 +46,7 @@ export default async function ProjectPurchasingPage({
   const ctx = await getPurchasingContext(supabase);
 
   const [{ data: itemData }, { data: msData }, { data: poData }, { data: planDocs }] = await Promise.all([
-    supabase.from('buy_items').select('*').eq('project_id', projectId).eq('status', 'planned').order('id'),
+    supabase.from('buy_items').select('*').eq('project_id', projectId).in('status', ['planned', 'ordered']).order('id'),
     supabase
       .from('project_milestones')
       .select('id, name, planned_start_date, sort_order')
@@ -57,8 +58,10 @@ export default async function ProjectPurchasingPage({
   const planFiles = (planDocs ?? []).filter((d) => d.version_status !== 'superseded' && String(d.storage_key).toLowerCase().endsWith('.pdf')).length;
   const items = (itemData ?? []) as BuyItem[];
   const milestones = (msData ?? []) as Row[];
-  const ourItems = items.filter((i) => !i.client_buys);
-  const clientItems = items.filter((i) => i.client_buys);
+  const planned = items.filter((i) => i.status === 'planned');
+  const orderedItems = items.filter((i) => i.status === 'ordered');
+  const ourItems = planned.filter((i) => !i.client_buys);
+  const clientItems = planned.filter((i) => i.client_buys);
   const itemIds = items.map((i) => i.id);
   const { data: quoteRows } = itemIds.length
     ? await supabase.from('price_quotes').select('buy_item_id, category, store, price, delivery, url').in('buy_item_id', itemIds)
@@ -68,9 +71,10 @@ export default async function ProjectPurchasingPage({
     const k = Number(q.buy_item_id);
     quotesByItem.set(k, [...(quotesByItem.get(k) ?? []), q]);
   }
-  const needPrices = items.filter((i) => !(quotesByItem.get(i.id) ?? []).length).map((i) => ({ id: Number(i.id), name: String(i.name) }));
+  const needPrices = planned.filter((i) => !(quotesByItem.get(i.id) ?? []).length).map((i) => ({ id: Number(i.id), name: String(i.name) }));
   const CAT_LABEL: Record<string, string> = { lowest: 'Lowest', value: 'Best value', fast: 'Fastest' };
   const orders = (poData ?? []) as Purchase[];
+  const poById = new Map(orders.map((o) => [Number(o.id), o]));
   const starts = new Map(milestones.map((m) => [String(m.id), (m.planned_start_date as string | null) ?? null]));
   const msName = new Map(milestones.map((m) => [String(m.id), String(m.name)]));
 
@@ -143,21 +147,26 @@ export default async function ProjectPurchasingPage({
           )}
           {TRADE_ORDER.map((trade) => {
             const inTrade = shown.filter((r) => tradeOf(r.item.name) === trade);
-            if (inTrade.length === 0) return null;
+            const orderedAll = orderedItems.filter((i) => tradeOf(i.name) === trade);
+            const orderedInTrade = filter === 'all' ? orderedAll : [];
+            if (inTrade.length === 0 && orderedInTrade.length === 0) return null;
+            const toBuy = rows.filter((r) => tradeOf(r.item.name) === trade).length;
+            const boughtCount = orderedAll.filter((i) => i.purchased_at || poById.get(Number(i.purchase_id))?.closed_at).length;
             return (
               <details key={trade} className="group mb-3 rounded-card border border-line bg-white">
                 <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 p-3 [&::-webkit-details-marker]:hidden">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-11 min-w-[2.75rem] items-center justify-center rounded-lg bg-navy px-3 text-xl font-bold text-white">
-                      {rows.filter((r) => tradeOf(r.item.name) === trade).length}
+                    <span className={`flex h-11 min-w-[2.75rem] items-center justify-center rounded-lg px-3 text-xl font-bold text-white ${toBuy === 0 ? 'bg-green-600' : 'bg-navy'}`}>
+                      {toBuy}
                     </span>
                     <div>
                       <p className="text-sm font-semibold text-navy">{trade}</p>
                       <p className="text-xs text-ink-soft">
-                        {rows.filter((r) => tradeOf(r.item.name) === trade).length === 1 ? 'item' : 'items'} to buy
+                        {toBuy === 1 ? 'item' : 'items'} to buy
                         {rows.filter((r) => tradeOf(r.item.name) === trade && r.urgency === 'now').length > 0
                           ? ` · ${rows.filter((r) => tradeOf(r.item.name) === trade && r.urgency === 'now').length} to order now`
                           : ''}
+                        {orderedAll.length > 0 ? ` · ${orderedAll.length - boughtCount} on orders · ${boughtCount} purchased` : ''}
                       </p>
                     </div>
                   </div>
@@ -224,6 +233,39 @@ export default async function ProjectPurchasingPage({
               </div>
             );
           })}
+                  {orderedInTrade.map((item) => {
+                    const po = item.purchase_id != null ? poById.get(Number(item.purchase_id)) : undefined;
+                    const boughtAt = item.purchased_at ?? po?.closed_at ?? null;
+                    const state = boughtAt ? 'purchased' : po?.status === 'approved' ? 'approved' : po?.status === 'rejected' ? 'rejected' : 'waiting';
+                    const look = {
+                      purchased: { card: 'border-green-300 bg-green-50', pill: 'bg-green-600 text-white', text: `Purchased · ${formatWhen(boughtAt)}` },
+                      approved: { card: 'border-sky-200 bg-sky-50', pill: 'bg-sky-600 text-white', text: 'Order approved · ready to buy' },
+                      waiting: { card: 'border-amber-300 bg-amber-50', pill: 'bg-amber-500 text-white', text: 'On an order · waiting for approval' },
+                      rejected: { card: 'border-red-300 bg-red-50', pill: 'bg-red-600 text-white', text: 'Order rejected' },
+                    }[state];
+                    return (
+                      <div key={item.id} className={`flex flex-wrap items-center gap-3 rounded-card border p-4 ${look.card}`}>
+                        <div className="min-w-[200px] flex-1">
+                          <p className="text-sm font-semibold text-navy">{item.name}</p>
+                          <p className="text-xs text-ink-soft">
+                            {item.vendor ? `${item.vendor} · ` : ''}Qty {Number(item.quantity)}{item.unit ? ` ${item.unit}` : ''}
+                            {Number(item.unit_price) > 0 ? ` · ${money(Number(item.unit_price) * Number(item.quantity))}` : ''}
+                            {po ? (
+                              <>
+                                {' · '}
+                                <Link href={`/admin/purchasing/${po.id}`} className="text-accent underline">{poNumber(po.id)}</Link>
+                              </>
+                            ) : null}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-bold ${look.pill}`}>{look.text}</span>
+                        {state === 'approved' && <MarkPurchasedButton projectId={projectId} itemId={item.id} on label="Mark purchased" />}
+                        {state === 'purchased' && item.purchased_at && !po?.closed_at && (
+                          <MarkPurchasedButton projectId={projectId} itemId={item.id} on={false} label="Undo" />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </details>
             );
@@ -297,6 +339,9 @@ export default async function ProjectPurchasingPage({
                       <span className="text-sm font-semibold text-navy">{money(p.total)}</span>
                     </span>
                   </Link>
+                  <p className="mt-1 text-right text-xs">
+                    <a href={`/admin/purchasing/${p.id}/po-pdf`} target="_blank" rel="noreferrer" className="text-accent underline">View PDF</a>
+                  </p>
                   {ctx.isApprover && p.status === 'pending' && <QuickDecision purchaseId={p.id} />}
                 </div>
               );

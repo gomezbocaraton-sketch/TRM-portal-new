@@ -324,6 +324,9 @@ export async function closePurchase(purchaseId: number, formData: FormData): Pro
       note: `Invoice ${invoiceNumber || '(no number)'} for ${'$' + amount.toFixed(2)}${costId ? ', added to Profitability' : ''}`,
     });
 
+    // Every item on the order is now purchased, with the time it was closed.
+    await supabase.from('buy_items').update({ purchased_at: now }).eq('purchase_id', purchaseId).is('purchased_at', null);
+
     if (sendQbo) await sendBillToQbo(purchaseId);
 
     refresh(purchaseId);
