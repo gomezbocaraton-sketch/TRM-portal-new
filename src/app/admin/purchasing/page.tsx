@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
 import { getPurchasingContext, money, poNumber, type Purchase } from '@/lib/purchasing';
+import { QuickDecision } from './QuickDecision';
 
 type Row = Record<string, unknown>;
 
@@ -72,8 +73,8 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
       ) : (
         <div className="space-y-3">
           {rows.map((p) => (
+            <div key={p.id}>
             <Link
-              key={p.id}
               href={`/admin/purchasing/${p.id}`}
               className="block rounded-card border border-line bg-white p-4 hover:border-accent sm:p-6"
             >
@@ -95,6 +96,8 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
                 </div>
               </div>
             </Link>
+            {ctx.isApprover && p.status === 'pending' && <QuickDecision purchaseId={p.id} />}
+            </div>
           ))}
         </div>
       )}

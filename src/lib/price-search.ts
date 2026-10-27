@@ -20,6 +20,12 @@ type Shopping = {
   link?: string;
 };
 
+// Item names from the plans often carry room lists in brackets; stores search better without them.
+export function searchQueryFor(name: string): string {
+  const q = name.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  return q || name;
+}
+
 export function priceSearchConfigured(): boolean {
   return Boolean(process.env.SERPAPI_KEY);
 }

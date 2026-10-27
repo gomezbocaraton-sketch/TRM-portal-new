@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { createPurchase } from '@/app/admin/purchasing/actions';
-import { searchPrices } from '@/lib/price-search';
+import { searchPrices, searchQueryFor } from '@/lib/price-search';
 import { extractProposalLines } from '@/lib/proposal-extract';
 import { MAX_PLAN_BYTES, combinePlanItems, readPlans as readPlansWithAi, type PlanItem } from '@/lib/plans-read';
 import { checkAgainstProposal, summarize, type ProposalItem } from '@/lib/proposal';
@@ -90,6 +90,31 @@ export async function searchWebPrices(itemId: number, formData: FormData): Promi
     );
     if (error) throw new Error(error.message);
     refresh();
+  });
+}
+
+// Finds the three web prices for one item using a cleaned-up search. The screen calls this for each item in turn.
+export async function findPricesFor(itemId: number): Promise<Outcome> {
+  return guard(async () => {
+    const supabase = await createClient();
+    const { data: item } = await supabase.from('buy_items').select('name').eq('id', itemId).maybeSingle();
+    if (!item) throw new Error('Item not found.');
+    const found = await searchPrices(searchQueryFor(String(item.name)));
+    await supabase.from('price_quotes').delete().eq('buy_item_id', itemId).eq('source', 'web');
+    const { error } = await supabase.from('price_quotes').insert(
+      found.map((f) => ({
+        buy_item_id: itemId,
+        category: f.category,
+        store: f.store,
+        title: f.title,
+        price: f.price,
+        delivery: f.delivery,
+        rating: f.rating,
+        url: f.url,
+        source: 'web',
+      }))
+    );
+    if (error) throw new Error(error.message);
   });
 }
 

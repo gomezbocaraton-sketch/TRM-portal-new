@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
 import { money } from '@/lib/purchasing';
 import { neededOnSite, orderByDate, shortDay, type BuyItem } from '@/lib/buyplan';
-import { priceSearchConfigured } from '@/lib/price-search';
+import { priceSearchConfigured, searchQueryFor } from '@/lib/price-search';
 import { similarity, type ProposalItem } from '@/lib/proposal';
 import { addManualQuote, deleteBuyItem, searchWebPrices, useQuote } from '../../actions';
 
@@ -84,7 +84,7 @@ export default async function ItemPricesPage({ params }: { params: Promise<{ id:
           </p>
         )}
         <FormWithFeedback action={searchWebPrices.bind(null, itemId)} submitLabel="Search prices" pendingLabel="Searching…">
-          <input name="query" defaultValue={item.name} className={input} />
+          <input name="query" defaultValue={searchQueryFor(item.name)} className={input} />
         </FormWithFeedback>
       </div>
 

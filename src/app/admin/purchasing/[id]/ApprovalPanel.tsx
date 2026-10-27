@@ -53,7 +53,7 @@ export function ApprovalPanel({
       <p className="mb-3 text-sm text-ink">
         {isApprover
           ? `This order is over ${money(threshold)}. Review the items above, then approve or reject.`
-          : `This order is over ${money(threshold)}, so only the approver (${approverEmail}) can approve it. They were emailed a link.`}
+          : `This order is over ${money(threshold)} and is waiting for approval from Vanessa Gomez Botero (${approverEmail}). Only she can approve or reject it, and the buttons show only when she is signed in.`}
       </p>
 
       {isApprover && (
@@ -67,20 +67,24 @@ export function ApprovalPanel({
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          disabled={!isApprover || pending}
-          onClick={() => decide('approved')}
-          className="rounded-lg bg-success px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-        >
-          Approve
-        </button>
-        <button
-          disabled={!isApprover || pending}
-          onClick={() => decide('rejected')}
-          className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 disabled:opacity-40"
-        >
-          Reject
-        </button>
+        {isApprover && (
+          <>
+            <button
+              disabled={pending}
+              onClick={() => decide('approved')}
+              className="rounded-lg bg-success px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              Approve
+            </button>
+            <button
+              disabled={pending}
+              onClick={() => decide('rejected')}
+              className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 disabled:opacity-40"
+            >
+              Reject
+            </button>
+          </>
+        )}
         <button
           type="button"
           disabled={pending}

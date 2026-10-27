@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { logout } from './actions';
+import { ApprovalBanner } from '@/components/ApprovalBanner';
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
       <header className="flex items-center justify-between border-b border-line bg-white px-4 py-3 sm:px-8">
@@ -19,6 +20,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </form>
         </div>
       </header>
+      <ApprovalBanner />
       {children}
     </div>
   );

@@ -17,6 +17,9 @@ import { extractConfigured } from '@/lib/proposal-extract';
 import { PlansBox } from '@/components/PlansBox';
 import { addBuyItem } from './actions';
 import { ReadPlansPanel } from './ReadPlansPanel';
+import { FindAllPrices } from './FindAllPrices';
+import { QuickDecision } from '@/app/admin/purchasing/QuickDecision';
+import { priceSearchConfigured } from '@/lib/price-search';
 
 export const maxDuration = 60;
 
@@ -50,6 +53,17 @@ export default async function ProjectPurchasingPage({
   const planFiles = (planDocs ?? []).filter((d) => d.version_status !== 'superseded' && String(d.storage_key).toLowerCase().endsWith('.pdf')).length;
   const items = (itemData ?? []) as BuyItem[];
   const milestones = (msData ?? []) as Row[];
+  const itemIds = items.map((i) => i.id);
+  const { data: quoteRows } = itemIds.length
+    ? await supabase.from('price_quotes').select('buy_item_id, category, store, price, delivery, url').in('buy_item_id', itemIds)
+    : { data: [] as Row[] };
+  const quotesByItem = new Map<number, Row[]>();
+  for (const q of (quoteRows ?? []) as Row[]) {
+    const k = Number(q.buy_item_id);
+    quotesByItem.set(k, [...(quotesByItem.get(k) ?? []), q]);
+  }
+  const needPrices = items.filter((i) => !(quotesByItem.get(i.id) ?? []).length).map((i) => ({ id: Number(i.id), name: String(i.name) }));
+  const CAT_LABEL: Record<string, string> = { lowest: 'Lowest', value: 'Best value', fast: 'Fastest' };
   const orders = (poData ?? []) as Purchase[];
   const starts = new Map(milestones.map((m) => [String(m.id), (m.planned_start_date as string | null) ?? null]));
   const msName = new Map(milestones.map((m) => [String(m.id), String(m.name)]));
@@ -110,6 +124,8 @@ export default async function ProjectPurchasingPage({
         </Link>
       </div>
 
+      <FindAllPrices items={needPrices} configured={priceSearchConfigured()} />
+
       <form method="get">
         <div className="space-y-2">
           {shown.length === 0 && (
@@ -142,9 +158,27 @@ export default async function ProjectPurchasingPage({
                   <p className="text-xs text-ink-soft">{item.lead_days}-day delivery</p>
                 </div>
                 <span className={`rounded-full px-3 py-1 text-xs font-bold ${tag}`}>{dueLabel(urgency, daysLeft)}</span>
+                {(quotesByItem.get(item.id) ?? []).length > 0 && (
+                  <div className="flex w-full flex-wrap gap-2 border-t border-line pt-3">
+                    {['lowest', 'value', 'fast']
+                      .map((c) => (quotesByItem.get(item.id) ?? []).find((q) => String(q.category) === c))
+                      .filter((q): q is Row => Boolean(q))
+                      .map((q) => (
+                        <span key={String(q.category)} className="rounded-lg bg-paper px-3 py-1.5 text-xs text-ink">
+                          <span className="font-semibold text-navy">{CAT_LABEL[String(q.category)] ?? 'Quote'}:</span> {money(Number(q.price))} at {String(q.store)}
+                          {q.url ? (
+                            <>
+                              {' '}
+                              <a href={String(q.url)} target="_blank" rel="noreferrer" className="text-accent underline">view</a>
+                            </>
+                          ) : null}
+                        </span>
+                      ))}
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <Link href={`${base}/item/${item.id}`} className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-semibold text-ink-soft hover:border-accent">
-                    Find prices
+                    {(quotesByItem.get(item.id) ?? []).length ? 'Compare & choose' : 'Find prices'}
                   </Link>
                   {urgency === 'now' && (
                     <Link href={`${base}/po?ids=${item.id}`} className="rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white">
@@ -181,13 +215,16 @@ export default async function ProjectPurchasingPage({
             {orders.map((p) => {
               const b = badge(p);
               return (
-                <Link key={p.id} href={`/admin/purchasing/${p.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-4 py-3 hover:border-accent">
-                  <span className="text-sm font-medium text-navy">{poNumber(p.id)} · {p.vendor}</span>
-                  <span className="flex items-center gap-3">
-                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${b.cls}`}>{b.text}</span>
-                    <span className="text-sm font-semibold text-navy">{money(p.total)}</span>
-                  </span>
-                </Link>
+                <div key={p.id}>
+                  <Link href={`/admin/purchasing/${p.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-4 py-3 hover:border-accent">
+                    <span className="text-sm font-medium text-navy">{poNumber(p.id)} · {p.vendor}</span>
+                    <span className="flex items-center gap-3">
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${b.cls}`}>{b.text}</span>
+                      <span className="text-sm font-semibold text-navy">{money(p.total)}</span>
+                    </span>
+                  </Link>
+                  {ctx.isApprover && p.status === 'pending' && <QuickDecision purchaseId={p.id} />}
+                </div>
               );
             })}
           </div>

@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { addDraftItems, finishPlanRead, planReadFiles, readPlanChunk, type DraftItem } from './actions';
 import { createClient } from '@/lib/supabase/client';
+import { searchQueryFor } from '@/lib/price-search';
 import type { PlanItem } from '@/lib/plans-read';
 
 type Step = { id: string; name: string; date: string };
@@ -215,10 +216,10 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
         <div className="mt-4">
           <p className="mb-2 text-xs text-ink-soft">This is a draft. Check the quantities against the plans, choose the schedule step for each item, and untick anything you do not want.</p>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
+            <table className="w-full min-w-[820px] text-sm">
               <thead>
                 <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-soft">
-                  <th className="py-2"></th><th className="py-2">Item</th><th className="py-2">Qty</th><th className="py-2">Needed for</th><th className="py-2">Delivery days</th>
+                  <th className="py-2"></th><th className="py-2">Item</th><th className="py-2">Qty</th><th className="py-2">Needed for</th><th className="py-2">Delivery days</th><th className="py-2">Vendors</th>
                 </tr>
               </thead>
               <tbody>
@@ -256,8 +257,18 @@ export function ReadPlansPanel({ projectId, steps, planFiles, configured }: { pr
                         ))}
                       </select>
                     </td>
-                    <td className="w-24 py-2">
+                    <td className="w-24 py-2 pr-2">
                       <input value={d.leadDays} onChange={(e) => change(d.key, { leadDays: Number(e.target.value) || 0 })} className={input} />
+                    </td>
+                    <td className="w-24 py-2">
+                      <a
+                        href={`https://www.google.com/search?tbm=shop&q=${encodeURIComponent(searchQueryFor(d.name))}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-semibold text-accent underline"
+                      >
+                        Compare vendors
+                      </a>
                     </td>
                   </tr>
                 ))}
