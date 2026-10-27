@@ -69,3 +69,37 @@ export function neededOnSite(item: BuyItem, milestoneStarts: Map<string, string 
   if (item.milestone_id) return milestoneStarts.get(String(item.milestone_id)) ?? null;
   return null;
 }
+
+// Groups items by trade so a purchase order can be built one trade at a time.
+export const TRADE_ORDER = [
+  'General construction',
+  'Electrical',
+  'Plumbing',
+  'HVAC',
+  'Paint',
+  'Millwork',
+  'Finishes',
+  'Doors, windows & hardware',
+  'Appliances & equipment',
+  'Other',
+] as const;
+export type Trade = (typeof TRADE_ORDER)[number];
+
+// The first matching rule wins, so the order matters (for example "blocking for millwork" is General construction).
+const TRADE_RULES: [Trade, RegExp][] = [
+  ['General construction', /blocking|backing|framing|\bstuds?\b|drywall|gypsum|sheetrock|plywood|lumber|firestop|fire[- ]?stopping|cement board|durock|joint compound|demolition|concrete|rough carpentry|fasteners?|anchors?/],
+  ['HVAC', /hvac|\bduct|refrigerant|condensate|diffuser|grille|register|air handler|mini[- ]?split|thermostat|damper|exhaust fan|\bvav\b|line set|ventilation|furnace|compressor/],
+  ['Electrical', /electric|conduit|\bemt\b|\bwire\b|wiring|breaker|panelboard|panel ['"]?[a-z]['"]?\b|outlet|receptacle|switch|junction box|light|downlight|\bled\b|luminaire|data\b|telephone|low[- ]voltage|cable|transformer|dimmer|exit sign/],
+  ['Plumbing', /plumb|pipe|piping|faucet|sink|toilet|lavatory|water closet|valve|drain|p-trap|water heater|backflow|urinal|hose bib|supply stop|eyewash/],
+  ['Paint', /paint|primer|coating|\bstain\b|lacquer|wall prep/],
+  ['Doors, windows & hardware', /\bdoors?\b|window|storefront|glazing|hardware|hinge|lockset|\block\b|closer|threshold|door frame/],
+  ['Appliances & equipment', /appliance|refrigerator|dishwasher|microwave|\boven\b|\brange\b|equipment|ice machine|water cooler|exam chair/],
+  ['Millwork', /millwork|cabinet|countertop|casework|reception|counter|shelving|shelf|slat|vanity|laminate|quartz|solid surface|display wall|wood panel/],
+  ['Finishes', /tile|flooring|\bfloor\b|carpet|vinyl|\blvt\b|wall base|rubber base|wall covering|wallpaper|ceiling|grout|backsplash|mirror|film|finish|trim|molding|moulding|baseboard/],
+];
+
+export function tradeOf(name: string): Trade {
+  const n = name.toLowerCase();
+  for (const [trade, re] of TRADE_RULES) if (re.test(n)) return trade;
+  return 'Other';
+}

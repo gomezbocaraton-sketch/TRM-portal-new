@@ -10,6 +10,8 @@ import {
   todayET,
   urgencyOf,
   CUSHION_DAYS,
+  TRADE_ORDER,
+  tradeOf,
   type BuyItem,
   type Urgency,
 } from '@/lib/buyplan';
@@ -18,6 +20,7 @@ import { PlansBox } from '@/components/PlansBox';
 import { addBuyItem } from './actions';
 import { ReadPlansPanel } from './ReadPlansPanel';
 import { FindAllPrices } from './FindAllPrices';
+import { TradeSelect } from './TradeSelect';
 import { QuickDecision } from '@/app/admin/purchasing/QuickDecision';
 import { priceSearchConfigured } from '@/lib/price-search';
 
@@ -127,13 +130,36 @@ export default async function ProjectPurchasingPage({
       <FindAllPrices items={needPrices} configured={priceSearchConfigured()} />
 
       <form method="get">
-        <div className="space-y-2">
+        <div>
           {shown.length === 0 && (
             <p className="rounded-card border border-line bg-white p-6 text-sm text-ink-soft">
               {items.length === 0 ? 'No items in the buy plan yet. Add the items from the plans below.' : 'Nothing in this group.'}
             </p>
           )}
-          {shown.map(({ item, needed, by, urgency, daysLeft }) => {
+          {TRADE_ORDER.map((trade) => {
+            const inTrade = shown.filter((r) => tradeOf(r.item.name) === trade);
+            if (inTrade.length === 0) return null;
+            return (
+              <div key={trade} className="mb-5">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 min-w-[2.75rem] items-center justify-center rounded-lg bg-navy px-3 text-xl font-bold text-white">
+                      {rows.filter((r) => tradeOf(r.item.name) === trade).length}
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-navy">{trade}</p>
+                      <p className="text-xs text-ink-soft">
+                        {rows.filter((r) => tradeOf(r.item.name) === trade).length === 1 ? 'item' : 'items'} to buy
+                        {rows.filter((r) => tradeOf(r.item.name) === trade && r.urgency === 'now').length > 0
+                          ? ` · ${rows.filter((r) => tradeOf(r.item.name) === trade && r.urgency === 'now').length} to order now`
+                          : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <TradeSelect trade={trade} />
+                </div>
+                <div className="space-y-2">
+          {inTrade.map(({ item, needed, by, urgency, daysLeft }) => {
             const border = urgency === 'now' ? 'border-l-red-600' : urgency === 'soon' ? 'border-l-amber-500' : 'border-l-line';
             const tag =
               urgency === 'now'
@@ -143,7 +169,7 @@ export default async function ProjectPurchasingPage({
                   : 'bg-paper text-ink-soft';
             return (
               <div key={item.id} className={`flex flex-wrap items-center gap-3 rounded-card border border-l-4 border-line bg-white p-4 ${border}`}>
-                <input type="checkbox" name="ids" value={item.id} defaultChecked={urgency === 'now'} className="h-4 w-4" />
+                <input type="checkbox" name="ids" value={item.id} data-trade={trade} className="h-4 w-4" />
                 <div className="min-w-[200px] flex-1">
                   <Link href={`${base}/item/${item.id}`} className="text-sm font-semibold text-navy hover:underline">
                     {item.name}
@@ -185,6 +211,10 @@ export default async function ProjectPurchasingPage({
                       Buy now
                     </Link>
                   )}
+                </div>
+              </div>
+            );
+          })}
                 </div>
               </div>
             );
