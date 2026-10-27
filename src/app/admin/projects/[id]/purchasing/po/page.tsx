@@ -16,7 +16,9 @@ export default async function GeneratePoPage({ params, searchParams }: { params:
   const ctx = await getPurchasingContext(supabase);
 
   const { data } = ids.length ? await supabase.from('buy_items').select('*').in('id', ids).eq('project_id', projectId).eq('status', 'planned') : { data: [] };
-  const items = (data ?? []) as BuyItem[];
+  const allTicked = (data ?? []) as BuyItem[];
+  const items = allTicked.filter((i) => !i.client_buys);
+  const leftOut = allTicked.length - items.length;
 
   if (items.length === 0) {
     return (
@@ -63,6 +65,11 @@ export default async function GeneratePoPage({ params, searchParams }: { params:
     <div>
       <Link href={`/admin/projects/${projectId}/purchasing`} className="mb-4 inline-block text-sm text-ink-soft hover:text-navy">&larr; Purchasing</Link>
       <h1 className="mb-4 text-xl font-semibold text-navy">Generate purchase order</h1>
+      {leftOut > 0 && (
+        <p className="mb-4 rounded-card border border-line bg-white px-4 py-3 text-sm text-ink-soft">
+          {leftOut} item{leftOut === 1 ? ' is' : 's are'} marked client buying and left off this order. They go on the client estimate instead.
+        </p>
+      )}
 
       <div className="mb-4 rounded-card border border-line bg-white p-4 sm:p-6">
         <div className="overflow-x-auto">

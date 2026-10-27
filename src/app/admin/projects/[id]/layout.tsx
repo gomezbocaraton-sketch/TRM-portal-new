@@ -23,7 +23,7 @@ export default async function ProjectLayout({
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-10">
-      <Link href="/admin" className="mb-2 inline-block text-sm text-ink-soft hover:text-navy">
+      <Link href="/admin" className="mb-2 inline-block text-sm text-ink-soft hover:text-navy print:hidden">
         &larr; Projects
       </Link>
       <h1 className="mb-1 text-xl font-medium text-navy sm:text-2xl">{project.name}</h1>

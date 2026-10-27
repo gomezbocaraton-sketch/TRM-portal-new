@@ -11,7 +11,7 @@ export async function ApprovalBanner() {
     const { count } = await supabase.from('purchases').select('id', { count: 'exact', head: true }).eq('status', 'pending');
     if (!count) return null;
     return (
-      <Link href="/admin/purchasing" className="block border-b border-accent bg-accent-tint px-4 py-3 text-center text-sm font-semibold text-accent-deep hover:underline sm:px-8">
+      <Link href="/admin/purchasing" className="block print:hidden border-b border-accent bg-accent-tint px-4 py-3 text-center text-sm font-semibold text-accent-deep hover:underline sm:px-8">
         {count} purchase order{count === 1 ? '' : 's'} waiting for your approval. Click here to review and approve.
       </Link>
     );

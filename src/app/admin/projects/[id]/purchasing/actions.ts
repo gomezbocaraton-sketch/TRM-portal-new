@@ -118,6 +118,20 @@ export async function findPricesFor(itemId: number): Promise<Outcome> {
   });
 }
 
+// Marks items as bought by the client (an estimate is sent instead of a purchase order), or moves them back.
+export async function setClientBuying(projectId: string, itemIds: number[], on: boolean): Promise<Outcome> {
+  return guard(async () => {
+    if (itemIds.length === 0) throw new Error('Tick at least one item first.');
+    const supabase = await createClient();
+    const { error } = await supabase.from('buy_items').update({ client_buys: on }).in('id', itemIds).eq('project_id', projectId).eq('status', 'planned');
+    if (error) {
+      if (error.message.includes('client_buys')) throw new Error('The database is not ready for this yet. Run the client buying SQL in Supabase first.');
+      throw new Error(error.message);
+    }
+    refresh();
+  });
+}
+
 export async function addManualQuote(itemId: number, formData: FormData): Promise<Outcome> {
   return guard(async () => {
     const store = String(formData.get('store') ?? '').trim();
@@ -233,6 +247,8 @@ export async function createPoFromItems(formData: FormData): Promise<Outcome> {
     const { data } = await supabase.from('buy_items').select('*').in('id', ids).eq('status', 'planned');
     const items = (data ?? []) as BuyItem[];
     if (items.length === 0) throw new Error('Those items were already ordered.');
+    const clientOnes = items.filter((i) => i.client_buys);
+    if (clientOnes.length > 0) throw new Error(`"${clientOnes[0].name}" is marked client buying. Move it back to our purchasing, or take it off this order.`);
     for (const it of items) {
       if (!(Number(it.unit_price) > 0)) throw new Error(`Enter a price for "${it.name}" first (use Find prices).`);
     }

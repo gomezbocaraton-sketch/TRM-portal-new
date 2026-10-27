@@ -21,6 +21,7 @@ import { addBuyItem } from './actions';
 import { ReadPlansPanel } from './ReadPlansPanel';
 import { FindAllPrices } from './FindAllPrices';
 import { TradeSelect } from './TradeSelect';
+import { ClientBuyButton } from './ClientBuyButton';
 import { QuickDecision } from '@/app/admin/purchasing/QuickDecision';
 import { priceSearchConfigured } from '@/lib/price-search';
 
@@ -56,6 +57,8 @@ export default async function ProjectPurchasingPage({
   const planFiles = (planDocs ?? []).filter((d) => d.version_status !== 'superseded' && String(d.storage_key).toLowerCase().endsWith('.pdf')).length;
   const items = (itemData ?? []) as BuyItem[];
   const milestones = (msData ?? []) as Row[];
+  const ourItems = items.filter((i) => !i.client_buys);
+  const clientItems = items.filter((i) => i.client_buys);
   const itemIds = items.map((i) => i.id);
   const { data: quoteRows } = itemIds.length
     ? await supabase.from('price_quotes').select('buy_item_id, category, store, price, delivery, url').in('buy_item_id', itemIds)
@@ -72,7 +75,7 @@ export default async function ProjectPurchasingPage({
   const msName = new Map(milestones.map((m) => [String(m.id), String(m.name)]));
 
   const today = todayET();
-  const rows = items
+  const rows = ourItems
     .map((item) => {
       const needed = neededOnSite(item, starts);
       const by = orderByDate(needed, item.lead_days);
@@ -140,8 +143,8 @@ export default async function ProjectPurchasingPage({
             const inTrade = shown.filter((r) => tradeOf(r.item.name) === trade);
             if (inTrade.length === 0) return null;
             return (
-              <div key={trade} className="mb-5">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <details key={trade} className="group mb-3 rounded-card border border-line bg-white">
+                <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 p-3 [&::-webkit-details-marker]:hidden">
                   <div className="flex items-center gap-3">
                     <span className="flex h-11 min-w-[2.75rem] items-center justify-center rounded-lg bg-navy px-3 text-xl font-bold text-white">
                       {rows.filter((r) => tradeOf(r.item.name) === trade).length}
@@ -156,9 +159,12 @@ export default async function ProjectPurchasingPage({
                       </p>
                     </div>
                   </div>
-                  <TradeSelect trade={trade} />
-                </div>
-                <div className="space-y-2">
+                  <span className="flex items-center gap-4">
+                    <TradeSelect trade={trade} />
+                    <span className="text-lg text-ink-soft transition-transform group-open:rotate-90">&rsaquo;</span>
+                  </span>
+                </summary>
+                <div className="space-y-2 p-3 pt-0">
           {inTrade.map(({ item, needed, by, urgency, daysLeft }) => {
             const border = urgency === 'now' ? 'border-l-red-600' : urgency === 'soon' ? 'border-l-amber-500' : 'border-l-line';
             const tag =
@@ -202,7 +208,8 @@ export default async function ProjectPurchasingPage({
                       ))}
                   </div>
                 )}
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <ClientBuyButton projectId={projectId} itemIds={[item.id]} on label="Client buying" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-semibold text-ink-soft hover:border-accent" />
                   <Link href={`${base}/item/${item.id}`} className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-semibold text-ink-soft hover:border-accent">
                     {(quotesByItem.get(item.id) ?? []).length ? 'Compare & choose' : 'Find prices'}
                   </Link>
@@ -216,15 +223,16 @@ export default async function ProjectPurchasingPage({
             );
           })}
                 </div>
-              </div>
+              </details>
             );
           })}
         </div>
 
         {shown.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-card bg-navy p-4 text-sm text-white">
-            <span>Tick the items you want, then choose what to do with them.</span>
+            <span>Open a group, tick the items you want, then choose what to do with them.</span>
             <span className="flex flex-wrap gap-2">
+              <ClientBuyButton projectId={projectId} on label="Client buying" className="rounded-lg border border-white px-4 py-2 text-sm font-semibold text-white" />
               <button formAction={`${base}/check`} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-navy">
                 Check against proposal
               </button>
@@ -235,6 +243,40 @@ export default async function ProjectPurchasingPage({
           </div>
         )}
       </form>
+
+      {clientItems.length > 0 && (
+        <details className="group mt-6 rounded-card border border-line bg-white">
+          <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 p-3 [&::-webkit-details-marker]:hidden">
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 min-w-[2.75rem] items-center justify-center rounded-lg bg-accent px-3 text-xl font-bold text-white">{clientItems.length}</span>
+              <div>
+                <p className="text-sm font-semibold text-navy">Client buying</p>
+                <p className="text-xs text-ink-soft">{clientItems.length === 1 ? 'item' : 'items'} the client purchases. These are left off purchase orders.</p>
+              </div>
+            </div>
+            <span className="flex items-center gap-4">
+              <Link href={`${base}/client-estimate`} className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white">
+                Create estimate for the client
+              </Link>
+              <span className="text-lg text-ink-soft transition-transform group-open:rotate-90">&rsaquo;</span>
+            </span>
+          </summary>
+          <div className="space-y-2 p-3 pt-0">
+            {clientItems.map((item) => (
+              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-line px-4 py-3">
+                <div>
+                  <Link href={`${base}/item/${item.id}`} className="text-sm font-semibold text-navy hover:underline">{item.name}</Link>
+                  <p className="text-xs text-ink-soft">
+                    Qty {Number(item.quantity)}{item.unit ? ` ${item.unit}` : ''}
+                    {Number(item.unit_price) > 0 ? ` · ${money(Number(item.unit_price) * Number(item.quantity))}` : ' · no price yet'}
+                  </p>
+                </div>
+                <ClientBuyButton projectId={projectId} itemIds={[item.id]} on={false} label="Move back to our purchasing" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-semibold text-ink-soft hover:border-accent" />
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
 
       <div className="mt-8 rounded-card border border-line bg-white p-4 sm:p-6">
         <p className="mb-3 text-sm font-semibold text-navy">Purchase orders for this project</p>
