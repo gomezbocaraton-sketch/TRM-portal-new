@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
-import { formatWhen, getPurchasingContext, money, poNumber, type Purchase } from '@/lib/purchasing';
+import { formatWhen, getPurchasingContext, money, poNumber, poStage, STAGES, type Purchase } from '@/lib/purchasing';
+import { StageLegend } from '@/components/StageLegend';
 import {
   dueLabel,
   neededOnSite,
@@ -96,17 +97,11 @@ export default async function ProjectPurchasingPage({
   const statClass = (on: boolean, extra: string) => `rounded-card border p-4 text-left ${extra} ${on ? 'outline outline-2 outline-navy' : ''}`;
   const approverName = ctx.approverEmail === 'vgomez@codeconsultationnyc.com' ? 'Vanessa Gomez Botero' : ctx.approverEmail;
 
-  const badge = (p: Purchase) =>
-    p.closed_at
-      ? { text: 'Closed · bought', cls: 'bg-success-tint text-success' }
-      : p.status === 'approved'
-      ? { text: p.auto_approved ? 'Auto-approved' : 'Approved', cls: 'bg-success-tint text-success' }
-      : p.status === 'rejected'
-        ? { text: 'Rejected', cls: 'bg-red-50 text-red-700' }
-        : { text: 'Waiting for approval', cls: 'bg-accent-tint text-accent-deep' };
+  const badge = (p: Purchase) => ({ text: STAGES[poStage(p)].label, cls: STAGES[poStage(p)].badge });
 
   return (
     <div>
+      <StageLegend />
       <p className="mb-4 text-xs text-ink-soft">
         Order-by dates come from this project&apos;s schedule: the day each item must be on site, minus its delivery time and a {CUSHION_DAYS}-day cushion.
         Orders over {money(ctx.threshold)} need approval from {approverName}; orders of {money(ctx.threshold)} or less are approved automatically.
@@ -236,13 +231,14 @@ export default async function ProjectPurchasingPage({
                   {orderedInTrade.map((item) => {
                     const po = item.purchase_id != null ? poById.get(Number(item.purchase_id)) : undefined;
                     const boughtAt = item.purchased_at ?? po?.closed_at ?? null;
+                    const stage = po ? poStage(po) : 'submitted';
+                    const st = STAGES[boughtAt ? 'closed' : stage];
                     const state = boughtAt ? 'purchased' : po?.status === 'approved' ? 'approved' : po?.status === 'rejected' ? 'rejected' : 'waiting';
                     const look = {
-                      purchased: { card: 'border-green-300 bg-green-50', pill: 'bg-green-600 text-white', text: `Purchased · ${formatWhen(boughtAt)}` },
-                      approved: { card: 'border-sky-200 bg-sky-50', pill: 'bg-sky-600 text-white', text: 'Order approved · ready to buy' },
-                      waiting: { card: 'border-amber-300 bg-amber-50', pill: 'bg-amber-500 text-white', text: 'On an order · waiting for approval' },
-                      rejected: { card: 'border-red-300 bg-red-50', pill: 'bg-red-600 text-white', text: 'Order rejected' },
-                    }[state];
+                      card: st.card,
+                      pill: st.badge,
+                      text: boughtAt ? `Purchased · ${formatWhen(boughtAt)}` : STAGES[stage].label,
+                    };
                     return (
                       <div key={item.id} className={`flex flex-wrap items-center gap-3 rounded-card border p-4 ${look.card}`}>
                         <div className="min-w-[200px] flex-1">

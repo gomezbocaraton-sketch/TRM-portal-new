@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
-import { getPurchasingContext, money, poNumber, type Purchase } from '@/lib/purchasing';
+import { getPurchasingContext, money, poNumber, poStage, STAGES, type Purchase } from '@/lib/purchasing';
+import { StageLegend } from '@/components/StageLegend';
 import { QuickDecision } from './QuickDecision';
 
 type Row = Record<string, unknown>;
@@ -55,6 +56,7 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
         </div>
       )}
 
+      <StageLegend />
       <div className="mb-5 flex flex-wrap gap-2">
         <Link href="/admin/purchasing" className={tabClass(active === 'pending')}>
           Waiting for approval ({count('pending')})
@@ -93,9 +95,7 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  {p.closed_at && (
-                    <span className="rounded-full bg-success-tint px-2 py-0.5 text-xs font-semibold text-success">Closed</span>
-                  )}
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STAGES[poStage(p)].badge}`}>{STAGES[poStage(p)].label}</span>
                   {p.auto_approved && (
                     <span className="rounded-full bg-paper px-2 py-0.5 text-xs font-medium text-ink-soft">Auto-approved</span>
                   )}

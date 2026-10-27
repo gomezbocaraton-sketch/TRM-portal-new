@@ -1,10 +1,12 @@
 import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
-import { COST_CATEGORIES, formatWhen, getPurchasingContext, money, poNumber, PURCHASE_DOC_CATEGORIES, TRADE_TO_COST_CATEGORY, type Purchase } from '@/lib/purchasing';
+import { COST_CATEGORIES, formatWhen, getPurchasingContext, money, poNumber, poStage, PURCHASE_DOC_CATEGORIES, STAGES, TRADE_TO_COST_CATEGORY, type Purchase } from '@/lib/purchasing';
 import { tradeOf } from '@/lib/buyplan';
 import { FormWithFeedback } from '@/components/FormWithFeedback';
 import { DropFileInput } from '@/components/DropFileInput';
-import { closePurchase } from '../actions';
+import { recordInvoice, sendPoToVendor } from '../actions';
+import { ReceivingPanel } from './ReceivingPanel';
+import { CloseOrderButton } from './CloseOrderButton';
 import { RetryQboButton } from './RetryQboButton';
 import { PurchaseDocuments, type PurchaseDoc } from './PurchaseDocuments';
 import { ApprovalPanel } from './ApprovalPanel';
@@ -26,6 +28,19 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
 
   const p = data as Purchase | null;
   if (!p) return <p className="text-sm text-ink-soft">Purchase not found.</p>;
+  const { data: invData } = await supabase.from('purchase_invoices').select('*').eq('purchase_id', purchaseId).order('created_at');
+  const invoices = (invData ?? []) as Row[];
+  const billed = invoices.reduce((sum, i) => sum + Number(i.amount), 0);
+  const poTotal = Number(p.total);
+  const diff = Math.round((billed - poTotal) * 100) / 100;
+  const stage = poStage(p);
+  const st = STAGES[stage];
+  let suggestedEmail = String(p.vendor_email ?? '');
+  if (!suggestedEmail) {
+    const { data: prev } = await supabase.from('purchases').select('vendor_email').eq('vendor', p.vendor).not('vendor_email', 'is', null).order('created_at', { ascending: false }).limit(1);
+    suggestedEmail = String((prev?.[0] as Row | undefined)?.vendor_email ?? '');
+  }
+  const legacyClosed = Boolean(p.closed_at) && invoices.length === 0 && Number(p.invoice_amount ?? 0) > 0;
 
   let projectName = 'No project';
   if (p.project_id != null) {
@@ -59,15 +74,6 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
   const suggestedMilestone = [...msTally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'general';
   const closed = Boolean(p.closed_at);
 
-  const badge =
-    closed
-      ? { text: 'Closed · items bought', cls: 'bg-success-tint text-success' }
-      : p.status === 'approved'
-      ? { text: p.auto_approved ? 'Auto-approved' : 'Approved', cls: 'bg-success-tint text-success' }
-      : p.status === 'rejected'
-        ? { text: 'Rejected', cls: 'bg-red-50 text-red-700' }
-        : { text: 'Waiting for approval', cls: 'bg-accent-tint text-accent-deep' };
-
   const pcEvent = ((events ?? []) as Row[]).find((e) => String(e.event) === 'Proposal check');
   const proposalCheck = pcEvent && pcEvent.note ? { note: String(pcEvent.note) } : null;
 
@@ -94,9 +100,24 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             <a href={`/admin/purchasing/${p.id}/po-pdf?download=1`} className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-navy hover:border-accent">
               Download PDF
             </a>
-            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badge.cls}`}>{badge.text}</span>
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${st.badge}`}>{st.label}</span>
           </span>
         </div>
+
+        {stage !== 'rejected' && (
+          <div className="mb-6 flex flex-wrap items-center gap-2 text-xs">
+            {(['submitted', 'approved', 'sent', 'received', 'closed'] as const).map((k, idx, arr) => {
+              const order = ['submitted', 'approved', 'sent', 'partial', 'received', 'closed'];
+              const reached = order.indexOf(stage) >= order.indexOf(k);
+              return (
+                <span key={k} className="flex items-center gap-2">
+                  <span className={`rounded-full px-3 py-1 font-semibold ${reached ? STAGES[k].badge : 'bg-paper text-ink-soft'}`}>{STAGES[k].label}</span>
+                  {idx < arr.length - 1 && <span className="text-ink-soft">→</span>}
+                </span>
+              );
+            })}
+          </div>
+        )}
 
         <div className="mb-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
           <div><p className="text-xs font-medium text-ink-soft">Entered by</p><p className="text-ink">{p.created_by_name ?? '—'}, {formatWhen(p.created_at)}</p></div>
@@ -113,6 +134,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                 <th className={th}>Unit</th>
                 <th className={`${th} text-right`}>Price each</th>
                 <th className={`${th} text-right`}>Amount</th>
+                <th className={`${th} text-right`}>Received</th>
               </tr>
             </thead>
             <tbody>
@@ -123,6 +145,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                   <td className="px-2 py-2">{String(i.unit ?? '')}</td>
                   <td className="px-2 py-2 text-right">{money(Number(i.unit_price))}</td>
                   <td className="px-2 py-2 text-right font-medium">{money(Number(i.quantity) * Number(i.unit_price))}</td>
+                  <td className={`px-2 py-2 text-right ${Number(i.received_qty ?? 0) >= Number(i.quantity) ? 'font-semibold text-teal-700' : Number(i.received_qty ?? 0) > 0 ? 'font-semibold text-orange-600' : 'text-ink-soft'}`}>{Number(i.received_qty ?? 0)}</td>
                 </tr>
               ))}
             </tbody>
@@ -156,81 +179,143 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
           />
         </div>
 
-        {p.status === 'approved' && !closed && (
+        {p.status === 'approved' && (
           <div className="mb-6 border-t border-line pt-4">
-            <p className="mb-1 text-sm font-semibold text-navy">Close this order</p>
-            <p className="mb-3 text-xs text-ink-soft">
-              When the items are bought, enter the vendor&apos;s invoice. It is added to this project&apos;s costs on the Profitability tab and sent to QuickBooks as a bill.
-            </p>
-            <FormWithFeedback action={closePurchase.bind(null, p.id)} submitLabel="Mark as bought and close the order" pendingLabel="Closing…">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-ink-soft">Vendor invoice number</label>
-                  <input name="invoiceNumber" className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+            <p className="mb-1 text-sm font-semibold text-navy">Send to vendor</p>
+            {p.sent_at && <p className="mb-2 text-xs font-semibold text-indigo-700">Sent to {p.sent_to} on {formatWhen(p.sent_at)}</p>}
+            {!closed && (
+              <FormWithFeedback action={sendPoToVendor.bind(null, p.id)} submitLabel={p.sent_at ? 'Send again' : 'Email the PO to the vendor'} pendingLabel="Sending…">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-ink-soft">Vendor email *</label>
+                    <input name="to" type="email" defaultValue={suggestedEmail} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-ink-soft">Message (optional)</label>
+                    <input name="message" className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+                  </div>
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-ink-soft">Invoice date</label>
-                  <input type="date" name="invoiceDate" defaultValue={new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-ink-soft">Invoice amount *</label>
-                  <input name="invoiceAmount" defaultValue={Number(p.total).toFixed(2)} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-ink-soft">Profitability category</label>
-                  <select name="category" defaultValue={suggestedCategory} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm">
-                    {COST_CATEGORIES.map((c) => (<option key={c}>{c}</option>))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-ink-soft">Schedule step</label>
-                  <select name="milestone" defaultValue={suggestedMilestone} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm">
-                    {((msList ?? []) as Row[]).map((m) => (<option key={String(m.id)} value={String(m.id)}>{String(m.name)}</option>))}
-                    <option value="general">General (no step)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-ink-soft">Invoice file (optional)</label>
-                  <DropFileInput name="file" pathPrefix={`${p.project_id ?? 'general'}/costs`} compact />
-                </div>
-              </div>
-              <label className="mt-3 flex items-center gap-2 text-sm text-ink">
-                <input type="checkbox" name="sendQbo" defaultChecked /> Also send it to QuickBooks as a bill
-              </label>
-            </FormWithFeedback>
+              </FormWithFeedback>
+            )}
           </div>
         )}
 
-        {closed && (
+        {p.status === 'approved' && (
           <div className="mb-6 border-t border-line pt-4">
-            <p className="mb-3 text-sm font-semibold text-navy">Closed: items bought</p>
-            <div className="space-y-2 rounded-lg bg-paper px-4 py-3 text-sm text-ink">
-              <p>
-                Closed by {p.closed_by_name ?? 'staff'}, {formatWhen(p.closed_at ?? null)}. Invoice {p.invoice_number ? `#${p.invoice_number}` : '(no number)'} for {money(Number(p.invoice_amount ?? 0))}
-                {p.invoice_date ? `, dated ${p.invoice_date}` : ''}.
-              </p>
-              <p>
-                Profitability:{' '}
-                {p.cost_id ? (
-                  <>
-                    added as a cost. <Link className="text-accent underline" href={`/admin/projects/${p.project_id}/profitability`}>Open Profitability</Link>
-                  </>
-                ) : (
-                  'not added (this order has no project).'
-                )}
-              </p>
-              <div className="flex flex-wrap items-start gap-3">
-                <span>QuickBooks:</span>
-                {p.qbo_bill_id ? (
-                  <span className="font-semibold text-success">Bill {p.qbo_bill_id} created ✓</span>
-                ) : (
-                  <>
-                    <span className="text-red-700">{p.qbo_error ? `not sent: ${p.qbo_error}` : 'not sent yet'}</span>
-                    <RetryQboButton purchaseId={p.id} />
-                  </>
-                )}
+            <p className="mb-2 text-sm font-semibold text-navy">Receiving</p>
+            {closed ? (
+              <p className="text-xs text-ink-soft">This order is closed.</p>
+            ) : (
+              <ReceivingPanel
+                purchaseId={p.id}
+                lines={((items ?? []) as Row[]).map((i) => ({ id: Number(i.id), description: String(i.description), quantity: Number(i.quantity), received: Number(i.received_qty ?? 0) }))}
+              />
+            )}
+          </div>
+        )}
+
+        {p.status === 'approved' && (
+          <div className="mb-6 border-t border-line pt-4">
+            <p className="mb-2 text-sm font-semibold text-navy">Invoices &amp; billing</p>
+            <div className="mb-3 grid grid-cols-2 gap-3 rounded-lg bg-paper px-4 py-3 text-sm sm:grid-cols-4">
+              <div><p className="text-xs text-ink-soft">PO total</p><p className="font-semibold text-navy">{money(poTotal)}</p></div>
+              <div><p className="text-xs text-ink-soft">Invoiced</p><p className="font-semibold text-navy">{money(legacyClosed ? Number(p.invoice_amount) : billed)}</p></div>
+              <div><p className="text-xs text-ink-soft">Remaining</p><p className="font-semibold text-navy">{money(Math.max(0, poTotal - (legacyClosed ? Number(p.invoice_amount) : billed)))}</p></div>
+              <div>
+                <p className="text-xs text-ink-soft">Variance</p>
+                {(() => {
+                  const d = legacyClosed ? Math.round((Number(p.invoice_amount) - poTotal) * 100) / 100 : diff;
+                  const has = invoices.length > 0 || legacyClosed;
+                  if (!has) return <p className="text-ink-soft">—</p>;
+                  if (d === 0) return <p className="font-semibold text-success">On budget</p>;
+                  return <p className={`font-semibold ${d > 0 ? 'text-red-600' : 'text-success'}`}>{d > 0 ? '+' : '−'}{money(Math.abs(d))} ({poTotal ? Math.abs((d / poTotal) * 100).toFixed(1) : '0'}%)</p>;
+                })()}
               </div>
             </div>
+
+            {invoices.length > 0 && (
+              <ul className="mb-3 space-y-2 text-sm">
+                {invoices.map((i) => (
+                  <li key={String(i.id)} className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-line px-3 py-2">
+                    <span>
+                      <b>{i.invoice_number ? `#${String(i.invoice_number)}` : 'Invoice'}</b> · {money(Number(i.amount))} · {String(i.invoice_date ?? '')} · {String(i.category ?? '')}
+                    </span>
+                    <span className="flex flex-wrap items-start gap-2">
+                      {i.qbo_bill_id ? (
+                        <span className="text-xs font-semibold text-success">QuickBooks bill {String(i.qbo_bill_id)} ✓</span>
+                      ) : (
+                        <>
+                          {i.qbo_error ? <span className="max-w-xs text-xs text-red-700">not sent: {String(i.qbo_error)}</span> : <span className="text-xs text-ink-soft">not sent to QuickBooks</span>}
+                          <RetryQboButton invoiceId={Number(i.id)} />
+                        </>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {legacyClosed && (
+              <p className="mb-3 text-xs text-ink-soft">
+                Invoice {p.invoice_number ? `#${p.invoice_number}` : '(no number)'} for {money(Number(p.invoice_amount))} was recorded before multiple invoices were supported.
+                {p.qbo_bill_id ? ` QuickBooks bill ${p.qbo_bill_id}.` : p.qbo_error ? ` QuickBooks: ${p.qbo_error}` : ''}
+              </p>
+            )}
+
+            {!closed && (
+              <>
+                <FormWithFeedback action={recordInvoice.bind(null, p.id)} submitLabel="Record invoice" pendingLabel="Saving…">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-ink-soft">Vendor invoice number</label>
+                      <input name="invoiceNumber" className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-ink-soft">Invoice date</label>
+                      <input type="date" name="invoiceDate" defaultValue={new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-ink-soft">Invoice amount *</label>
+                      <input name="invoiceAmount" defaultValue={Math.max(0, poTotal - billed).toFixed(2)} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-ink-soft">Profitability category</label>
+                      <select name="category" defaultValue={suggestedCategory} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm">
+                        {COST_CATEGORIES.map((c) => (<option key={c}>{c}</option>))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-ink-soft">Schedule step</label>
+                      <select name="milestone" defaultValue={suggestedMilestone} className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm">
+                        {((msList ?? []) as Row[]).map((m) => (<option key={String(m.id)} value={String(m.id)}>{String(m.name)}</option>))}
+                        <option value="general">General (no step)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-ink-soft">Invoice file (optional)</label>
+                      <DropFileInput name="file" pathPrefix={`${p.project_id ?? 'general'}/costs`} compact />
+                    </div>
+                  </div>
+                  <label className="mt-3 flex items-center gap-2 text-sm text-ink">
+                    <input type="checkbox" name="sendQbo" defaultChecked /> Also send it to QuickBooks as a bill
+                  </label>
+                </FormWithFeedback>
+                {invoices.length > 0 && (
+                  <div className="mt-4 border-t border-line pt-4">
+                    <CloseOrderButton
+                      purchaseId={p.id}
+                      summary={`Invoiced ${money(billed)} of ${money(poTotal)}${diff === 0 ? '' : diff > 0 ? ` (over by ${money(diff)})` : ` (under by ${money(-diff)})`}. Closing marks every item Purchased and cannot be undone.`}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+            {closed && (
+              <p className="text-xs text-ink-soft">
+                Closed by {p.closed_by_name ?? 'staff'}, {formatWhen(p.closed_at ?? null)}.{' '}
+                {p.project_id != null && <Link className="text-accent underline" href={`/admin/projects/${p.project_id}/profitability`}>Open Profitability</Link>}
+              </p>
+            )}
           </div>
         )}
 

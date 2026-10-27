@@ -26,6 +26,10 @@ export type Purchase = {
   qbo_bill_id?: string | null;
   qbo_synced_at?: string | null;
   qbo_error?: string | null;
+  vendor_email?: string | null;
+  sent_at?: string | null;
+  sent_to?: string | null;
+  receipt_status?: string | null;
 };
 
 // The categories used on the Profitability tab, and which one an order's items usually belong to.
@@ -46,6 +50,32 @@ export const TRADE_TO_COST_CATEGORY: Record<string, string> = {
   'Appliances & equipment': 'Materials',
   Other: 'Materials',
 };
+
+// The order's stage follows the usual construction PO process: Submitted, Approved, Sent, Partially received, Received, Closed.
+// Each stage has one colour that is used everywhere (badges, item cards, the tracker).
+export type StageKey = 'submitted' | 'approved' | 'sent' | 'partial' | 'received' | 'closed' | 'rejected';
+
+export const STAGES: Record<StageKey, { label: string; hint: string; badge: string; card: string; dot: string }> = {
+  submitted: { label: 'Submitted', hint: 'Waiting for approval', badge: 'bg-amber-100 text-amber-800', card: 'border-amber-300 bg-amber-50', dot: 'bg-amber-500' },
+  approved: { label: 'Approved', hint: 'Ready to send and buy', badge: 'bg-sky-100 text-sky-800', card: 'border-sky-300 bg-sky-50', dot: 'bg-sky-500' },
+  sent: { label: 'Sent to vendor', hint: 'Vendor has the PO', badge: 'bg-indigo-100 text-indigo-800', card: 'border-indigo-300 bg-indigo-50', dot: 'bg-indigo-500' },
+  partial: { label: 'Partially received', hint: 'Some items arrived', badge: 'bg-orange-100 text-orange-800', card: 'border-orange-300 bg-orange-50', dot: 'bg-orange-500' },
+  received: { label: 'Received', hint: 'Everything arrived', badge: 'bg-teal-100 text-teal-800', card: 'border-teal-300 bg-teal-50', dot: 'bg-teal-500' },
+  closed: { label: 'Closed', hint: 'Bought and invoiced', badge: 'bg-green-100 text-green-800', card: 'border-green-300 bg-green-50', dot: 'bg-green-600' },
+  rejected: { label: 'Rejected', hint: 'Not approved', badge: 'bg-red-100 text-red-800', card: 'border-red-300 bg-red-50', dot: 'bg-red-500' },
+};
+
+export const STAGE_ORDER: StageKey[] = ['submitted', 'approved', 'sent', 'partial', 'received', 'closed'];
+
+export function poStage(p: { status: string; closed_at?: string | null; receipt_status?: string | null; sent_at?: string | null }): StageKey {
+  if (p.status === 'rejected') return 'rejected';
+  if (p.status === 'pending') return 'submitted';
+  if (p.closed_at) return 'closed';
+  if (p.receipt_status === 'received') return 'received';
+  if (p.receipt_status === 'partial') return 'partial';
+  if (p.sent_at) return 'sent';
+  return 'approved';
+}
 
 export function isClosed(p: { closed_at?: string | null }): boolean {
   return Boolean(p.closed_at);

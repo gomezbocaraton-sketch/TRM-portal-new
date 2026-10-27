@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { retryQboBill } from '../actions';
 
-export function RetryQboButton({ purchaseId }: { purchaseId: number }) {
+export function RetryQboButton({ invoiceId }: { invoiceId: number }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -13,7 +13,7 @@ export function RetryQboButton({ purchaseId }: { purchaseId: number }) {
     setBusy(true);
     setError('');
     try {
-      const res = await retryQboBill(purchaseId);
+      const res = await retryQboBill(invoiceId);
       if (res.error) setError(res.error);
       router.refresh();
     } catch {

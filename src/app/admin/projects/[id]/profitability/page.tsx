@@ -26,6 +26,28 @@ export default async function ProfitabilityPage({ params }: { params: Promise<{ 
     supabase.from('payments').select('amount').eq('project_id', projectId),
   ]);
 
+  // Committed cost: open purchase orders not yet invoiced. Tolerates the tables not existing yet.
+  let approvedCommitted = 0;
+  let waitingCommitted = 0;
+  let openOrders = 0;
+  try {
+    const { data: pos } = await supabase.from('purchases').select('id, status, total, closed_at').eq('project_id', projectId).in('status', ['approved', 'pending']).is('closed_at', null);
+    const list = (pos ?? []) as Row[];
+    if (list.length) {
+      const { data: invs } = await supabase.from('purchase_invoices').select('purchase_id, amount').in('purchase_id', list.map((x) => x.id as number));
+      const billedBy = new Map<string, number>();
+      for (const i of (invs ?? []) as Row[]) billedBy.set(String(i.purchase_id), (billedBy.get(String(i.purchase_id)) ?? 0) + Number(i.amount));
+      for (const o of list) {
+        const left = Math.max(0, Number(o.total) - (billedBy.get(String(o.id)) ?? 0));
+        if (o.status === 'approved') approvedCommitted += left;
+        else waitingCommitted += left;
+        openOrders++;
+      }
+    }
+  } catch {
+    // purchasing tables not ready
+  }
+
   const msName = new Map<string, string>(
     ((milestones ?? []) as Row[]).map((m) => [String(m.id), String(m.name ?? m.title ?? `Milestone ${m.id}`)])
   );
@@ -82,6 +104,23 @@ export default async function ProfitabilityPage({ params }: { params: Promise<{ 
         <div className="rounded-card border border-line bg-white p-5">
           <p className="text-xs font-medium text-ink-soft">Profit (received − costs)</p>
           <p className={`mt-1 text-2xl font-medium ${grossProfit >= 0 ? 'text-success' : 'text-red-600'}`}>{money(grossProfit)}</p>
+        </div>
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="rounded-card border border-sky-300 bg-sky-50 p-5">
+          <p className="text-xs font-medium text-ink-soft">Committed (approved orders, not yet invoiced)</p>
+          <p className="mt-1 text-2xl font-medium text-sky-800">{money(approvedCommitted)}</p>
+          <p className="mt-1 text-xs text-ink-soft">{openOrders} open order{openOrders === 1 ? '' : 's'}</p>
+        </div>
+        <div className="rounded-card border border-amber-300 bg-amber-50 p-5">
+          <p className="text-xs font-medium text-ink-soft">Waiting for approval</p>
+          <p className="mt-1 text-2xl font-medium text-amber-800">{money(waitingCommitted)}</p>
+        </div>
+        <div className="rounded-card border border-line bg-white p-5">
+          <p className="text-xs font-medium text-ink-soft">Forecast cost (costs to date + committed)</p>
+          <p className="mt-1 text-2xl font-medium text-navy">{money(totalCosts + approvedCommitted)}</p>
+          <p className="mt-1 text-xs text-ink-soft">Forecast profit on money received: {money(received - totalCosts - approvedCommitted)}</p>
         </div>
       </div>
 
